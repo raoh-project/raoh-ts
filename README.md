@@ -89,7 +89,10 @@ issue still wins over it.
 The codes, message keys and metadata are those of the Raoh Specification, which Raoh for Java, Go,
 Rust and PHP follow too, so the same client-side handling works for all of them.
 
-`Issues` keeps them in the order they were found. `flatten()` groups the sentences by path.
+`Issues` keeps them in the order they were found. `flatten()` groups the sentences by path, and
+`at(path)` gives the issues at one path, what a form shows beside the field it names:
+`issues.at(["lines", 0, "sku"])` is those of the first line's `sku`, and none of those above or
+below it.
 
 A path is a JSON Pointer's reference tokens, each kept as its text. RFC 6901 leaves it to the
 value a token is applied to whether `0` names a member or an index, and a `Path` says no more
@@ -147,8 +150,8 @@ kept as it is written. `parse(text)` and `decoder.decodeJson(text)` read a JSON 
 number a `JsonNumber` holding its lexeme and every object a `Map` holding its members in order.
 
 A decoder also reads what an application already has: plain objects, arrays, strings, booleans,
-`null`, and numbers as JavaScript `number` or `bigint`, or as `JSON.rawJSON` makes them, which
-keeps their text. `undefined` is an absent value. An object is a `Map` of string keys, or an object
+`null`, and numbers as JavaScript `number` or `bigint`, as a `Decimal`, which is read at its scale,
+or as `JSON.rawJSON` makes them, which keeps their text. `undefined` is an absent value. An object is a `Map` of string keys, or an object
 whose data are its own properties. What the input model has no place for — a string holding an
 unpaired surrogate, an array with a hole, a `Date`, a `Set`, a `String` object — is refused with a
 `TypeError` rather than read as some other value. Such a
@@ -193,6 +196,58 @@ operations. JavaScript's own `normalize`, case mapping and `RegExp` follow which
 version the engine has, so they are left out until raoh-ts reads text with 199x-notation, rather
 than given with answers that differ from one engine to another. `conformance/conformance.json`
 lists them.
+
+## Releasing
+
+`@raoh/core` is published by the `Publish` workflow and by nothing else. `package.json` on `develop`
+holds the next version as `X.Y.Z-dev`. A push to `develop` publishes the commit it brings, once CI
+has passed on it, as `X.Y.Z-dev.N.YYYYMMDDHHMMSS.gHHHHHHHHHHHH` under the dist-tag `dev`: `N` is how
+many commits the commit holds, itself and every one before it, then the time of the commit, then the
+commit. npm takes a version once and never again, so a development version is a commit, as a
+timestamped Maven snapshot is. A later commit on `develop` holds every one before it, so its `N` is
+greater and SemVer orders the versions as `develop` does; the time does not, since a commit can be
+dated before its parent, and two can be made in one second.
+
+`dev` names the newest state of `develop`, and not whichever run happened to publish last. Just
+before it publishes, a run asks `develop` as it is then whether a later commit has reached it, and
+where one has, it publishes nothing and leaves `dev` to that commit's run; one run publishes at a
+time, so the run that finds itself newest publishes before any later commit's run asks, whatever
+order GitHub starts the runs in. So the commits of one push but the last, and a push a later one
+overtakes before its run publishes, have no version of their own; and where the later commit's run
+fails, `dev` stays where it was until a push whose run passes.
+
+`npm install @raoh/core` takes `latest`, which is a release, and a range written for releases,
+`^0.9.0`, takes no development version: npm takes a prerelease only for a range that names one of the
+same `X.Y.Z`, and `^0.9.0-dev.1` takes every later one. So a project that means one
+commit writes its version exactly, `npm install --save-exact @raoh/core@<version>`, as `npm install`
+otherwise saves a range.
+
+`scripts/publish.sh` says what version a ref makes, under which dist-tag, and publishes it, and CI
+takes each path it can take as a dry run on every pull request (`scripts/try-publish.sh`), so each
+is taken before a push takes it. A release is a tag:
+
+1. On a branch from `develop`, set `package.json`'s version to `X.Y.Z` and open a pull request to
+   `main`.
+2. Merge it, and tag the merge commit on `main` `vX.Y.Z`. The workflow fails a tag that is not `v`
+   and a version, that is not the version `package.json` holds, or that names a commit not on
+   `main`. It runs the whole of CI on the commit, and only once that passes publishes `X.Y.Z`: under
+   `latest` where it is newer than what `latest` names as it is published, and otherwise, as a patch
+   of an older line or one whose run comes after a newer release's, under `release-X.Y.Z`, which
+   names it and nothing else. `latest` only ever moves to a newer release, so once every run has run
+   it names the newest release published, whatever order the runs ran in. What it names is asked of
+   the registry, which holds what was published, so a tag the workflow refused, or whose run failed,
+   has no say in it.
+3. Merge `main` back into `develop`, and set `package.json` there to `<next version>-dev`.
+
+The workflow logs in with nothing: npm proves to the registry that it runs in this workflow of this
+repository, which the package's settings on npmjs.com name as its trusted publisher, and the
+registry records with each version the commit and the run it was built in. A trusted publisher is
+named for a package that exists, so the package's first version is published by hand from a
+checkout, and the trusted publisher named after it: repository `raoh-project/raoh-ts`, workflow
+`publish.yml`, with `npm publish` allowed. A trusted publisher named since September 3, 2026 allows
+`npm stage publish` and allows `npm publish` only where it is chosen, and the workflow publishes with
+`npm publish`. It needs nothing else: it reads what `latest` names from the registry without
+logging in, as anyone can of a public package.
 
 ## License
 

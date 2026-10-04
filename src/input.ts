@@ -90,7 +90,8 @@ export function kindOf(value: unknown): Kind {
       wellFormed(value);
       return "string";
     case "object":
-      if (ofThisCopy(value, JsonNumber, "JsonNumber") || rawNumber(value) !== undefined) {
+      if (ofThisCopy(value, JsonNumber, "JsonNumber") || ofThisCopy(value, Decimal, "Decimal")
+        || rawNumber(value) !== undefined) {
         return "number";
       }
       if (Array.isArray(value)) {
@@ -156,11 +157,15 @@ export function isObject(value: unknown): value is object {
 /**
  * The lexeme of a number of the input model; `undefined` for a JavaScript number that no JSON
  * text writes (NaN or an infinity). An integer is written in full, as `BigInt` writes it, so that
- * 1e21 read by `JSON.parse` is still an integer to an integer decoder.
+ * 1e21 read by `JSON.parse` is still an integer to an integer decoder. A `Decimal` is written at its
+ * scale, so that `decimal()` reads back the decimal it is, trailing zeros and all.
  */
 export function lexemeOf(value: unknown): string | undefined {
   if (ofThisCopy(value, JsonNumber, "JsonNumber")) {
     return value.lexeme;
+  }
+  if (ofThisCopy(value, Decimal, "Decimal")) {
+    return value.toString();
   }
   const raw = rawNumber(value);
   if (raw !== undefined) {

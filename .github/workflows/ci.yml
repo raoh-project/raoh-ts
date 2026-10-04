@@ -4,6 +4,8 @@ on:
   push:
     branches: [main, develop]
   pull_request:
+  # Publishing runs all of this on the commit it publishes before it publishes anything.
+  workflow_call:
 
 jobs:
   # The tests as they are written, TypeScript run by Node, on the oldest Node that runs them
@@ -34,6 +36,12 @@ jobs:
       # What npm packs carries the license and the README beside what tsc wrote.
       - name: The package carries the license and the README
         run: npm pack --dry-run --json | jq -e '.[0].files | map(.path) | index("LICENSE") and index("README.md") and index("dist/index.js")'
+      # What the publish workflow does, but the upload, on each path it can take: a development
+      # version newest on develop and one a later commit has passed, a release that is the greatest
+      # tagged and one below another. None turns on the ref CI runs for or on what package.json
+      # holds, so CI asks the same for a pull request, for develop, and on a commit on main.
+      - name: Publish, as a dry run, on each path
+        run: scripts/try-publish.sh
 
   # The library on the oldest Node a project that installs it may run (engines), which is older
   # than the one the tests need as TypeScript. The tools run on the Node they need, and compile the

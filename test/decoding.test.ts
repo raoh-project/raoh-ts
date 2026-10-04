@@ -267,6 +267,8 @@ test("refuses a value another copy of the library made, where it would otherwise
   assert.throws(() => new Issue("required", { path: other.Path.of("a") }), /another copy of @raoh\/core/);
   assert.throws(() => JSON.stringify(new Issue("x", { meta: { bound: other.Decimal.of(1) } })), /another copy/);
   assert.throws(() => failed(new other.Issue("required")), /another copy of @raoh\/core/);
+  assert.throws(() => stringify([other.Decimal.of(1)]), /another copy of @raoh\/core/);
+  assert.throws(() => decimal().decode(other.Decimal.of(1)), /another copy of @raoh\/core/);
   // A copy's own values are its own.
   assert.equal(other.stringify(theirs), "[1.50]");
 });
@@ -305,4 +307,34 @@ test("writes only what parse reads back, as the value it was, and refuses what t
     const text = stringify(value);
     assert.equal(stringify(parse(text)), text, text);
   }
+});
+
+test("gives the issues at a path, as a form shows them beside a field", () => {
+  const order = object(
+    field("lines", list(object(field("sku", string().minLength(3)), field("quantity", long())))),
+    field("note", string()),
+  );
+  const read = order.decode({ lines: [{ sku: "A", quantity: "two" }, { sku: "ABC", quantity: 1 }], note: 1 });
+  assert.ok(read.issues !== undefined);
+  assert.deepEqual(read.issues.at(["lines", 0, "sku"]).map((issue) => issue.code), ["too_short"]);
+  assert.deepEqual(read.issues.at(Path.of("lines", 0, "quantity")).map((issue) => issue.code), ["type_mismatch"]);
+  assert.deepEqual(read.issues.at(["lines", "0", "quantity"]), read.issues.at(["lines", 0, "quantity"]));
+  // Only the issues at the path: none above it, and none below it.
+  assert.deepEqual(read.issues.at(["lines", 0]), []);
+  assert.deepEqual(read.issues.at(["lines", 1, "sku"]), []);
+  assert.deepEqual(read.issues.at([]), []);
+  assert.equal(read.issues.at(["note"]).length, 1);
+});
+
+test("reads a Decimal as the number it is, at its scale", () => {
+  const priced = Decimal.parse("1500.00");
+  const read = decimal().decode(priced);
+  assert.ok(read.issues === undefined);
+  assert.equal(read.value.toString(), "1500.00");
+  assert.equal(stringify({ unitPrice: priced, tiny: Decimal.parse("1E-7") }), '{"unitPrice":1500.00,"tiny":1E-7}');
+  assert.equal(long().decode(Decimal.parse("2")).value, 2n);
+  assert.deepEqual(int().decode(Decimal.parse("2.5")).issues?.list.map((issue) => issue.code), ["type_mismatch"]);
+  // What stringify writes of a Decimal, parse reads back as that Decimal.
+  const [back] = parse(stringify([Decimal.parse("-0.10")])) as unknown[];
+  assert.equal(decimal().decode(back).value?.toString(), "-0.10");
 });

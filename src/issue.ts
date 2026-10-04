@@ -116,6 +116,17 @@ export class Issues implements Iterable<Issue> {
     return base.isRoot ? this : new Issues(this.#list.map((issue) => issue.under(base)));
   }
 
+  /**
+   * The issues at `path`, in order, and none where nothing was found there: what a form shows beside
+   * the field the path names. The path is a `Path` or its segments, a number naming an element by
+   * its index, so `at(["lines", 0, "sku"])` is the issues of the first line's `sku`. An issue at a
+   * path below or above it is not at it.
+   */
+  at(path: Path | readonly (string | number)[]): readonly Issue[] {
+    const wanted = ofThisCopy(path, Path, "Path") ? path : Path.of(...(path as readonly (string | number)[]));
+    return this.#list.filter((issue) => issue.path.equals(wanted));
+  }
+
   /** The sentences for the issues, grouped by the JSON Pointer of their path. */
   flatten(resolver: MessageResolver = Messages.english): Record<string, string[]> {
     const out: Record<string, string[]> = {};

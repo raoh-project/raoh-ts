@@ -1,0 +1,77 @@
+name: Publish
+
+# Publishes @raoh/core, by scripts/publish.sh, which says what version a ref makes and under which
+# dist-tag. A push to develop publishes the commit it brings, where no later commit has reached
+# develop by then, as a development version under dev: X.Y.Z-dev with how many commits it holds,
+# the time and the commit, a version npm takes once and never again, and which a range written for
+# releases does not reach. A tag vX.Y.Z on main publishes X.Y.Z, under latest where it is newer than
+# what latest names, and otherwise under a dist-tag that names it alone. CI
+# takes each of these paths as a dry run on every pull request, by scripts/try-publish.sh.
+#
+# npm is handed nothing to log in with: it proves to the registry that it runs in this workflow of
+# this repository (trusted publishing, the package's settings on npmjs.com naming this file), and
+# the registry records where each version was built from.
+
+on:
+  push:
+    branches: [develop]
+    tags: ['v*']
+
+# One run publishes at a time, which is what lets a run that finds itself newest on develop publish
+# under dev before any later commit's run asks; the order the runs start in is GitHub's, and nothing
+# turns on it. A group holds one run waiting by default, and a run that comes after it takes its
+# place, which would drop a release tag waiting behind a push; queue: max holds every run, up to a
+# hundred.
+concurrency:
+  group: publish
+  cancel-in-progress: false
+  queue: max
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # A tag that is no release, or a develop whose package.json is not the next version, stops here,
+  # before CI runs.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: The version to publish
+        run: scripts/publish.sh "$GITHUB_REF" --check
+
+  # Everything CI checks of a commit, on the commit that is published.
+  ci:
+    needs: check
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: [check, ci]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # What npm proves to the registry that it runs here with.
+      id-token: write
+    steps:
+      # The whole history, for the time of the commit and whether it is on main.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # No cache: what is published is built from what the lockfile names and nothing kept.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      # Trusted publishing takes npm 11.5.1 or later.
+      - name: An npm that publishes as this workflow
+        run: |
+          npm install --global npm@^11.5.1
+          npm --version
+      - name: Publish
+        run: |
+          npm ci
+          scripts/publish.sh "$GITHUB_REF"
