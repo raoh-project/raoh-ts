@@ -36,20 +36,12 @@ jobs:
       # What npm packs carries the license and the README beside what tsc wrote.
       - name: The package carries the license and the README
         run: npm pack --dry-run --json | jq -e '.[0].files | map(.path) | index("LICENSE") and index("README.md") and index("dist/index.js")'
-      # What the publish workflow does, but the upload: a development version and a release, each
-      # from package.json set as it is on develop and as a release sets it, so the path a tag takes
-      # is taken before a tag is. Neither turns on the ref CI runs for or on which of the two
-      # package.json holds, so CI asks the same here for a pull request, for develop, and when a
-      # release runs it on a commit on main.
-      - name: Publish, as a dry run, a development version and a release
-        run: |
-          held="$(jq -r .version package.json)"
-          release="${held%-dev}"
-          npm version --no-git-tag-version --allow-same-version "$release-dev" > /dev/null
-          scripts/publish.sh refs/heads/develop --dry-run
-          npm version --no-git-tag-version --allow-same-version "$release" > /dev/null
-          scripts/publish.sh "refs/tags/v$release" --dry-run
-          git checkout -- package.json package-lock.json
+      # What the publish workflow does, but the upload, on each path it can take: a development
+      # version newest on develop and one a later commit has passed, a release that is the greatest
+      # tagged and one below another. None turns on the ref CI runs for or on what package.json
+      # holds, so CI asks the same for a pull request, for develop, and on a commit on main.
+      - name: Publish, as a dry run, on each path
+        run: scripts/try-publish.sh
 
   # The library on the oldest Node a project that installs it may run (engines), which is older
   # than the one the tests need as TypeScript. The tools run on the Node they need, and compile the

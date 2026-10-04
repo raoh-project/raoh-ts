@@ -200,27 +200,37 @@ lists them.
 ## Releasing
 
 `@raoh/core` is published by the `Publish` workflow and by nothing else. `package.json` on `develop`
-holds the next version as `X.Y.Z-dev`, and each commit on `develop` is published, once CI has passed
-on it, as that version followed by the time of the commit and the commit,
+holds the next version as `X.Y.Z-dev`. A push to `develop` publishes the commit it brings, once CI
+has passed on it, as that version followed by the time of the commit and the commit,
 `X.Y.Z-dev.YYYYMMDDHHMMSS.gHHHHHHHHHHHH`, under the dist-tag `dev`. npm takes a version once and
 never again, so a development version is a commit, as a timestamped Maven snapshot is: the commit
 makes two commits two versions, which the time alone does not, and the time puts them in the order
-they were made. `npm install @raoh/core` takes `latest`, which is a release, and a range written for
-releases, `^0.9.0`, takes no development version: npm takes a prerelease only for a range that names
-one of the same `X.Y.Z`, and `^0.9.0-dev.20261004000000.g0` takes every later one. So a project that
-means one commit writes its version exactly, `npm install --save-exact @raoh/core@<version>`, as
-`npm install` otherwise saves a range. Each commit is published in turn, in the order it was pushed,
-so `dev` names the last of them. `scripts/publish.sh`
-says what version a ref makes and publishes it, and CI runs it as a dry run for a development
-version and for a release on every pull request, so the path a tag takes is taken before a tag is
-pushed:
+they were made.
+
+`dev` names the newest state of `develop`, and not whichever run happened to publish last. Just
+before it publishes, a run asks `develop` as it is then whether a later commit has reached it, and
+where one has, it publishes nothing and leaves `dev` to that commit's run; one run publishes at a
+time, so the run that finds itself newest publishes before any later commit's run asks, whatever
+order GitHub starts the runs in. So the commits of one push but the last, and a push a later one
+overtakes before its run publishes, have no version of their own.
+
+`npm install @raoh/core` takes `latest`, which is a release, and a range written for releases,
+`^0.9.0`, takes no development version: npm takes a prerelease only for a range that names one of the
+same `X.Y.Z`, and `^0.9.0-dev.20261004000000.g0` takes every later one. So a project that means one
+commit writes its version exactly, `npm install --save-exact @raoh/core@<version>`, as `npm install`
+otherwise saves a range.
+
+`scripts/publish.sh` says what version a ref makes, under which dist-tag, and publishes it, and CI
+takes each path it can take as a dry run on every pull request (`scripts/try-publish.sh`), so each
+is taken before a push takes it. A release is a tag:
 
 1. On a branch from `develop`, set `package.json`'s version to `X.Y.Z` and open a pull request to
    `main`.
 2. Merge it, and tag the merge commit on `main` `vX.Y.Z`. The workflow fails a tag that is not `v`
    and a version, that is not the version `package.json` holds, or that names a commit not on
-   `main`. It runs the whole of CI on the commit, and only once that passes publishes `X.Y.Z` under
-   `latest`.
+   `main`. It runs the whole of CI on the commit, and only once that passes publishes `X.Y.Z`: under
+   `latest` where it is the greatest release tagged, and under `release-X.Y` where a greater one is,
+   so a release whose run comes after a greater one's never takes `latest` from it.
 3. Merge `main` back into `develop`, and set `package.json` there to `<next version>-dev`.
 
 The workflow logs in with nothing: npm proves to the registry that it runs in this workflow of this
