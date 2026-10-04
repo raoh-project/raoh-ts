@@ -1,0 +1,37 @@
+{
+  "name": "@raoh/core",
+  "version": "0.9.0-dev",
+  "description": "Decoders that turn untyped boundary input into typed domain values, reporting every issue with its path",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/raoh-project/raoh-ts.git"
+  },
+  "keywords": ["decoder", "validation", "json", "parse", "domain"],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "catalog": "node scripts/catalog.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.0"
+  }
+}
