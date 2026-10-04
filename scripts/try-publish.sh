@@ -3,12 +3,15 @@
 #
 #   - a development version newest on develop is published under dev;
 #   - one a later commit on develop has passed publishes nothing;
-#   - a release that is the greatest tagged is published under latest;
-#   - a release below one already tagged is published under release-X.Y.
+#   - a release newer than what latest names is published under latest: where nothing is published,
+#     where latest names a development version of it, and beside a greater tag that published
+#     nothing;
+#   - a release older than what latest names is published under release-X.Y.
 #
 # Whatever ref CI runs for and whichever version package.json holds, the same is asked: package.json
-# is set as it is on develop and as a release sets it. A later commit and a greater tag are made here
-# and taken away again, and package.json is put back as it was.
+# is set as it is on develop and as a release sets it, and what the registry says latest names is
+# set for each. A later commit and a greater tag are made here and taken away again, and
+# package.json is put back as it was.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -47,11 +50,18 @@ expect "a development version a later commit has passed" \
   "nothing is published" "Publishing to"
 
 npm version --no-git-tag-version --allow-same-version "$release" > /dev/null
-expect "a release that is the greatest tagged" \
-  "$(scripts/publish.sh "refs/tags/v$release" --dry-run 2>&1)" \
+expect "a release, with nothing published" \
+  "$(LATEST="" scripts/publish.sh "refs/tags/v$release" --dry-run 2>&1)" \
   "with tag latest"
-
-git tag "$greater"
-expect "a release below one already tagged" \
-  "$(scripts/publish.sh "refs/tags/v$release" --dry-run 2>&1)" \
+expect "a release, where latest names a development version of it" \
+  "$(LATEST="$release-dev.20260101000000.g000000000000" scripts/publish.sh "refs/tags/v$release" --dry-run 2>&1)" \
+  "with tag latest"
+expect "a release, where latest names a newer one" \
+  "$(LATEST="999999.0.0" scripts/publish.sh "refs/tags/v$release" --dry-run 2>&1)" \
   "with tag release-${release%.*}"
+
+# A tag whose run refused it, or failed, published nothing, and has no say in what latest names.
+git tag "$greater"
+expect "a release, beside a greater tag that published nothing" \
+  "$(LATEST="0.0.1" scripts/publish.sh "refs/tags/v$release" --dry-run 2>&1)" \
+  "with tag latest"

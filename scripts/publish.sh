@@ -6,9 +6,13 @@
 #     scripts/publish.sh <ref>             # publish
 #
 # A tag vX.Y.Z is a release: package.json holds that version, and the commit is on main. It is
-# published under the dist-tag latest where it is the greatest release the repository has tagged,
-# and under release-X.Y where it is not, so a release published after a greater one, as runs may be
-# run in another order than their tags were pushed, never takes latest from it.
+# published under the dist-tag latest where it is newer than what latest names as it is published,
+# and under release-X.Y where it is not, so a release whose run comes after a newer one's never takes
+# latest from it. What latest names is asked of the registry, which holds what was published: a tag
+# whose run refused it or failed published nothing, and has no say. One run publishes at a time, so
+# nothing is published between the asking and the publishing. LATEST, where it is set, is taken for
+# what the registry says, as a dry run sets it. The registry says it to a publish, which logs in as
+# the trusted publisher, and to nobody who does not log in; so a check names both and asks neither.
 #
 # Any other ref is a development version under the dist-tag dev: package.json holds the next version
 # as X.Y.Z-dev, and the version published is that, the time of the commit and the commit,
@@ -22,9 +26,8 @@
 # before any later commit's run asks, whatever order the runs were started in. Develop is
 # origin/develop, fetched as the run asks, or what DEVELOP names.
 #
-# CI runs this with --dry-run on every pull request: for a development version newest on develop,
-# for one a later commit has passed, and for a release, so that each path is taken before a push
-# takes it. A dry run leaves out only the check that a release's commit is on main, which a pull
+# CI runs this with --dry-run on every pull request, on each path scripts/try-publish.sh names, so
+# that each is taken before a push takes it. A dry run leaves out only the check that a release's commit is on main, which a pull
 # request's commit is not yet.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -37,6 +40,7 @@ case "$mode" in
 esac
 
 held=$(jq -r .version package.json)
+name=$(jq -r .name package.json)
 if [[ "$ref" == refs/tags/v* ]]; then
   version="${ref#refs/tags/v}"
   if ! [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
@@ -51,10 +55,27 @@ if [[ "$ref" == refs/tags/v* ]]; then
     echo "v$version names a commit that is not on main" >&2
     exit 1
   fi
-  # The releases tagged, this one among them whether or not its tag is here yet, greatest last.
-  greatest=$( { git tag --list 'v*' | sed 's/^v//'; echo "$version"; } \
-    | grep -E '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' | sort -V | tail -n 1)
-  if [ "$greatest" = "$version" ]; then
+  if [ "$mode" = --check ]; then
+    # Which of the two is asked of the registry as the release is published, with what a publish
+    # logs in with, which a check has not.
+    current="unknown until it is published"
+  elif [ -n "${LATEST+set}" ]; then
+    current="$LATEST"
+  elif tags=$(npm dist-tag ls "$name" 2>&1); then
+    current=$(sed -n 's/^latest: //p' <<< "$tags")
+  elif grep -q E404 <<< "$tags"; then
+    # The registry has no such package: nothing is published.
+    current=""
+  else
+    # What latest names is not known, and a release is not published on a guess.
+    echo "the registry would not say what latest names: $tags" >&2
+    exit 1
+  fi
+  # A package with nothing published has no latest, and its first release takes it. The first
+  # version published takes latest whatever it was published under, which may be a development one.
+  if [ "$mode" = --check ]; then
+    dist_tag="latest or release-${version%.*}"
+  elif [ -z "$current" ] || node scripts/newer.mjs "$version" "$current"; then
     dist_tag=latest
   else
     dist_tag="release-${version%.*}"
@@ -93,7 +114,6 @@ fi
 
 # A run again over a commit already published, as a run is re-run, has nothing to publish. Where the
 # registry has not yet said it has the version, npm refuses to publish it twice all the same.
-name=$(jq -r .name package.json)
 if [ "$mode" != --dry-run ] && [ -n "$(npm view "$name@$version" version 2>/dev/null || true)" ]; then
   echo "$name@$version is published already; nothing is published"
   exit 0
