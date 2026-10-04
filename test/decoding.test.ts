@@ -2,9 +2,9 @@
 // a decoder gives, and the API a caller writes against.
 
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync } from "node:fs";
+import { cpSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import {
@@ -254,7 +254,11 @@ test("refuses a value another copy of the library made, where it would otherwise
   // The sources copied somewhere else are another copy, as one a library brings with it would be.
   const elsewhere = mkdtempSync(join(tmpdir(), "raoh-copy-"));
   cpSync(join(import.meta.dirname, "..", "src"), elsewhere, { recursive: true });
-  const other = (await import(pathToFileURL(join(elsewhere, "index.ts")).href)) as typeof import("../src/index.ts");
+  // A copy is a package of its own, whose package.json says its JavaScript is ES modules.
+  writeFileSync(join(elsewhere, "package.json"), JSON.stringify({ type: "module" }));
+  // The copy is of the sources as this test runs them: TypeScript, or the JavaScript they compile to.
+  const index = join(elsewhere, `index${extname(import.meta.filename)}`);
+  const other = (await import(pathToFileURL(index).href)) as typeof import("../src/index.ts");
   const theirs = other.parse("[1.50]") as unknown[];
 
   assert.throws(() => stringify(theirs), /another copy of @raoh\/core/);

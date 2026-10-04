@@ -21,13 +21,21 @@
   ],
   "sideEffects": false,
   "engines": {
-    "node": ">=22"
+    "node": ">=22.0.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": ">=22.18.0",
+      "onFail": "error"
+    }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepare": "npm run build",
     "typecheck": "tsc --noEmit",
     "test": "node --test test/*.test.ts",
+    "compile-tests": "tsc -p tsconfig.runtime.json",
     "catalog": "node scripts/catalog.ts"
   },
   "devDependencies": {

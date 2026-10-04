@@ -21,6 +21,8 @@ npm install @raoh/core
 ```
 
 It is an ES module with no dependencies, and runs on Node 22 and later and in current browsers.
+Working on raoh-ts itself takes Node 22.18.0 or later, which runs the tests as the TypeScript they
+are written in; `package.json` says the first in `engines` and the second in `devEngines`.
 
 ## Quick start
 
