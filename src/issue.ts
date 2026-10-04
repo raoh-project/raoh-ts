@@ -3,6 +3,7 @@
 import { type MessageResolver, Messages } from "./messages.ts";
 import { Path } from "./path.ts";
 import { type IssueWire, issueWire } from "./wire.ts";
+import { ofThisCopy, tagOf } from "./copy.ts";
 
 /** What an issue is made with, besides its code. */
 export interface IssueInit {
@@ -37,7 +38,15 @@ export class Issue {
     this.messageKey = init.messageKey ?? code;
     this.meta = Object.freeze({ ...init.meta });
     this.givenMessage = init.message;
-    this.path = init.path === undefined ? Path.ROOT : init.path instanceof Path ? init.path : Path.of(...init.path);
+    this.path = init.path === undefined
+      ? Path.ROOT
+      : ofThisCopy(init.path, Path, "Path")
+        ? init.path
+        : Path.of(...(init.path as readonly (string | number)[]));
+  }
+
+  get [Symbol.toStringTag](): string {
+    return tagOf("Issue");
   }
 
   /** The sentence for the issue: the one it was given, or the one `resolver` writes. */
@@ -83,6 +92,10 @@ export class Issues implements Iterable<Issue> {
       throw new RangeError("a failure has at least one issue");
     }
     this.#list = Object.freeze([...issues]);
+  }
+
+  get [Symbol.toStringTag](): string {
+    return tagOf("Issues");
   }
 
   get length(): number {
@@ -146,5 +159,8 @@ export function ok<T>(value: T): Ok<T> {
 
 /** A failure with the issues given. */
 export function failed(issues: Issues | Issue | readonly Issue[]): Failed {
-  return { issues: issues instanceof Issues ? issues : new Issues(issues instanceof Issue ? [issues] : issues) };
+  if (ofThisCopy(issues, Issues, "Issues")) {
+    return { issues };
+  }
+  return { issues: new Issues(ofThisCopy(issues, Issue, "Issue") ? [issues] : (issues as readonly Issue[])) };
 }

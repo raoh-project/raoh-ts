@@ -160,6 +160,14 @@ The values a decoder gives are a `number` for `int`, `float` and `double`, a `bi
 `Decimal` (a coefficient and a scale) for `decimal`, a `ValueSet` for `toSet`, which tells +0 from
 -0 as a JavaScript `Set` does not, and a `Map` for `dict`.
 
+## A library built on Raoh
+
+A library whose decoders, issues or paths an application combines with its own, as Souther's
+`@souther/wasm` offers each type of a model as a `Decoder`, depends on `@raoh/core` as a peer
+dependency, so that the library and the application share one copy. A value one copy made is no
+instance of another copy's classes; where one is met anyway, such as a `Path` or a `JsonNumber` of
+another copy, it is refused with a `TypeError` that says so, rather than read as some other value.
+
 ## Conformance
 
 raoh-ts is checked against the [Raoh Specification](https://github.com/raoh-project/raoh-specification)

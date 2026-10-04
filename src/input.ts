@@ -9,6 +9,7 @@
 // as an object's member.
 
 import { Decimal } from "./decimal.ts";
+import { ofThisCopy, tagOf } from "./copy.ts";
 
 /** A number of the input model: the text it is written with. */
 export class JsonNumber {
@@ -19,6 +20,10 @@ export class JsonNumber {
       throw new SyntaxError(`${JSON.stringify(lexeme)} is not a JSON number`);
     }
     this.lexeme = lexeme;
+  }
+
+  get [Symbol.toStringTag](): string {
+    return tagOf("JsonNumber");
   }
 
   toString(): string {
@@ -73,7 +78,7 @@ export function kindOf(value: unknown): Kind {
     case "string":
       return "string";
     default:
-      if (value instanceof JsonNumber || rawNumber(value) !== undefined) {
+      if (ofThisCopy(value, JsonNumber, "JsonNumber") || rawNumber(value) !== undefined) {
         return "number";
       }
       return Array.isArray(value) ? "array" : "object";
@@ -110,7 +115,7 @@ export function isObject(value: unknown): value is object {
  * 1e21 read by `JSON.parse` is still an integer to an integer decoder.
  */
 export function lexemeOf(value: unknown): string | undefined {
-  if (value instanceof JsonNumber) {
+  if (ofThisCopy(value, JsonNumber, "JsonNumber")) {
     return value.lexeme;
   }
   const raw = rawNumber(value);

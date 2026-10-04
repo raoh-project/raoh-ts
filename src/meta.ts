@@ -2,6 +2,7 @@
 
 import { Decimal } from "./decimal.ts";
 import { Float, compareFloats } from "./float.ts";
+import { ofThisCopy } from "./copy.ts";
 
 /**
  * Whether the two are the same value of the value model: floats as `Object.is` compares them (+0
@@ -12,11 +13,11 @@ export function same(a: unknown, b: unknown): boolean {
   if (typeof a !== "object" || a === null || typeof b !== "object" || b === null) {
     return Object.is(a, b);
   }
-  if (a instanceof Decimal) {
-    return b instanceof Decimal && a.equals(b);
+  if (ofThisCopy(a, Decimal, "Decimal")) {
+    return ofThisCopy(b, Decimal, "Decimal") && a.equals(b);
   }
-  if (a instanceof Float) {
-    return b instanceof Float && a.width === b.width && Object.is(a.value, b.value);
+  if (ofThisCopy(a, Float, "Float")) {
+    return ofThisCopy(b, Float, "Float") && a.width === b.width && Object.is(a.value, b.value);
   }
   if (Array.isArray(a)) {
     return Array.isArray(b) && a.length === b.length && a.every((item, i) => same(item, b[i]));
@@ -67,10 +68,10 @@ export function keyOf(value: unknown): string | undefined {
       if (value === null) {
         return "z";
       }
-      if (value instanceof Decimal) {
+      if (ofThisCopy(value, Decimal, "Decimal")) {
         return `d${value.coefficient}:${value.scale}`;
       }
-      if (value instanceof Float) {
+      if (ofThisCopy(value, Float, "Float")) {
         return `f${value.width}:${Object.is(value.value, -0) ? "-0" : value.value}`;
       }
       return undefined;
@@ -93,10 +94,10 @@ export function compareValues(a: unknown, b: unknown): number {
   if (typeof a === "number" && typeof b === "number") {
     return compareFloats(a, b);
   }
-  if (a instanceof Float && b instanceof Float) {
+  if (ofThisCopy(a, Float, "Float") && ofThisCopy(b, Float, "Float")) {
     return compareFloats(a.value, b.value);
   }
-  if (a instanceof Decimal && b instanceof Decimal) {
+  if (ofThisCopy(a, Decimal, "Decimal") && ofThisCopy(b, Decimal, "Decimal")) {
     return a.compare(b);
   }
   const compare = (a as { compare?: unknown } | null)?.compare;

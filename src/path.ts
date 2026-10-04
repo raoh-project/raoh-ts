@@ -1,5 +1,7 @@
 // Where in the input an issue is.
 
+import { ofThisCopy, tagOf } from "./copy.ts";
+
 /**
  * A step into the input: a reference token of a JSON Pointer (RFC 6901). It is the name of an
  * object's member or the index of an array's element, written in decimal; which one is for the
@@ -25,6 +27,10 @@ export class Path {
   private constructor(parent: Path | undefined, segment: Segment | undefined) {
     this.#parent = parent;
     this.#segment = segment;
+  }
+
+  get [Symbol.toStringTag](): string {
+    return tagOf("Path");
   }
 
   /** The path of the given segments, from the root; an index is its decimal text. */
@@ -74,6 +80,7 @@ export class Path {
 
   /** `relative`, read as starting where this path ends. */
   concat(relative: Path): Path {
+    thisCopys(relative);
     let path: Path = this;
     for (const segment of relative.segments()) {
       path = path.child(segment);
@@ -97,6 +104,7 @@ export class Path {
 
   /** Whether the two paths have the same segments. */
   equals(other: Path): boolean {
+    thisCopys(other);
     let a: Path | undefined = this;
     let b: Path | undefined = other;
     while (a !== undefined && b !== undefined) {
@@ -121,5 +129,12 @@ export class Path {
 
   toJSON(): string {
     return this.toString();
+  }
+}
+
+/** `path`, refused where another copy of the library made it. */
+function thisCopys(path: Path): void {
+  if (!ofThisCopy(path, Path, "Path")) {
+    throw new TypeError(`${String(path)} is not a Path`);
   }
 }

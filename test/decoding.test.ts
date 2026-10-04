@@ -2,6 +2,10 @@
 // a decoder gives, and the API a caller writes against.
 
 import assert from "node:assert/strict";
+import { cpSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import {
   Decimal,
@@ -243,4 +247,21 @@ test("writes what a fallback says of an issue no catalogue has a template for, i
   // A template, where a catalogue has one, wins over the fallback.
   assert.equal(new Issue("required").message(japanese), "必須です");
   assert.equal(ruled.message(english.withOverrides({ invariant_violation: "rule {rule}" })), "rule even");
+});
+
+test("refuses a value another copy of the library made, where it would otherwise be misread", async () => {
+  // The sources copied somewhere else are another copy, as one a library brings with it would be.
+  const elsewhere = mkdtempSync(join(tmpdir(), "raoh-copy-"));
+  cpSync(join(import.meta.dirname, "..", "src"), elsewhere, { recursive: true });
+  const other = (await import(pathToFileURL(join(elsewhere, "index.ts")).href)) as typeof import("../src/index.ts");
+  const theirs = other.parse("[1.50]") as unknown[];
+
+  assert.throws(() => stringify(theirs), /another copy of @raoh\/core/);
+  assert.throws(() => decimal().decode(theirs[0]), /another copy of @raoh\/core/);
+  assert.throws(() => new Issue("required").under(other.Path.of("a")), /another copy of @raoh\/core/);
+  assert.throws(() => new Issue("required", { path: other.Path.of("a") }), /another copy of @raoh\/core/);
+  assert.throws(() => JSON.stringify(new Issue("x", { meta: { bound: other.Decimal.of(1) } })), /another copy/);
+  assert.throws(() => failed(new other.Issue("required")), /another copy of @raoh\/core/);
+  // A copy's own values are its own.
+  assert.equal(other.stringify(theirs), "[1.50]");
 });

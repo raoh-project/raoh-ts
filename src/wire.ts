@@ -15,6 +15,7 @@ import type { Issue } from "./issue.ts";
 import { Issues } from "./issue.ts";
 import { type MessageResolver, Messages } from "./messages.ts";
 import { ValueSet } from "./set.ts";
+import { ofThisCopy } from "./copy.ts";
 
 /** A JSON value as this library writes one: every number a JsonNumber of its exact text. */
 export type Wire = null | boolean | string | JsonNumber | readonly Wire[] | { readonly [member: string]: Wire };
@@ -71,7 +72,7 @@ export function wire(value: unknown, resolver: MessageResolver = Messages.englis
     case "undefined":
       return null;
   }
-  if (value === null || value instanceof JsonNumber) {
+  if (value === null || ofThisCopy(value, JsonNumber, "JsonNumber")) {
     return value;
   }
   // A number the input model reads from an object, which JSON.rawJSON makes, is written as the
@@ -79,16 +80,16 @@ export function wire(value: unknown, resolver: MessageResolver = Messages.englis
   if (kindOf(value) === "number") {
     return new JsonNumber(lexemeOf(value) as string);
   }
-  if (value instanceof Float) {
+  if (ofThisCopy(value, Float, "Float")) {
     return floatJson(value.value, value.width);
   }
-  if (value instanceof Decimal) {
+  if (ofThisCopy(value, Decimal, "Decimal")) {
     return value.toString();
   }
-  if (value instanceof Issues) {
+  if (ofThisCopy(value, Issues, "Issues")) {
     return value.list.map((issue) => nestedIssueWire(issue, resolver) as unknown as Wire);
   }
-  if (Array.isArray(value) || value instanceof ValueSet) {
+  if (Array.isArray(value) || ofThisCopy(value, ValueSet, "ValueSet")) {
     return [...value].map((item) => wire(item, resolver));
   }
   if (value instanceof Map) {
