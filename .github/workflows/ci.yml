@@ -6,30 +6,23 @@ on:
   pull_request:
 
 jobs:
+  # The tests as they are written, TypeScript run by Node, on the oldest Node that runs them
+  # (devEngines) and on the current LTS.
   test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # The oldest Node package.json says it runs on, read from it, and the current LTS.
         node: [oldest, lts/*]
     steps:
       - uses: actions/checkout@v4
-      # The engines field and this are one statement, so the oldest is read there, to the patch: a
-      # version written here as well, or one naming only a major, would let the tests pass on a
-      # Node the package does not promise and leave the one it does untried.
       - name: The Node to run on
         id: node
         run: |
-          if [ "${{ matrix.node }}" != oldest ]; then
+          if [ "${{ matrix.node }}" = oldest ]; then
+            echo "version=$(scripts/oldest-node.sh tooling)" >> "$GITHUB_OUTPUT"
+          else
             echo "version=${{ matrix.node }}" >> "$GITHUB_OUTPUT"
-            exit 0
           fi
-          engines=$(jq -r '.engines.node' package.json)
-          if [[ ! "$engines" =~ ^\>=([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
-            echo "::error::package.json says it runs on Node $engines; write the oldest it runs on as >=X.Y.Z"
-            exit 1
-          fi
-          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ steps.node.outputs.version }}
@@ -41,6 +34,33 @@ jobs:
       # What npm packs carries the license and the README beside what tsc wrote.
       - name: The package carries the license and the README
         run: npm pack --dry-run --json | jq -e '.[0].files | map(.path) | index("LICENSE") and index("README.md") and index("dist/index.js")'
+
+  # The library on the oldest Node a project that installs it may run (engines), which is older
+  # than the one the tests need as TypeScript. The tools run on the Node they need, and compile the
+  # sources and the tests as the build compiles the sources; only the JavaScript that comes of them
+  # is run on the oldest Node, and npm is not run there.
+  runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The Nodes to run on
+        id: node
+        run: |
+          echo "tooling=$(scripts/oldest-node.sh tooling)" >> "$GITHUB_OUTPUT"
+          echo "runtime=$(scripts/oldest-node.sh runtime)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node.outputs.tooling }}
+          cache: npm
+      - run: npm ci
+      - run: npm run compile-tests
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node.outputs.runtime }}
+      - name: The compiled tests on the oldest Node engines names
+        run: |
+          test "$(node --version)" = "v${{ steps.node.outputs.runtime }}"
+          node --test target/runtime/test/*.test.js
 
   # The cases of the Raoh Specification at the commit conformance/spec.lock pins, run on this
   # library and checked by that commit's raoh-verify against conformance/conformance.json.
