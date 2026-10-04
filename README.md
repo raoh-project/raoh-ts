@@ -194,6 +194,34 @@ version the engine has, so they are left out until raoh-ts reads text with 199x-
 than given with answers that differ from one engine to another. `conformance/conformance.json`
 lists them.
 
+## Releasing
+
+`@raoh/core` is published by the `Publish` workflow and by nothing else. `package.json` on `develop`
+holds the next version as `X.Y.Z-dev`, and each commit on `develop` is published, once CI has passed
+on it, as that version followed by the time of the commit and the commit,
+`X.Y.Z-dev.YYYYMMDDHHMMSS.gHHHHHHHHHHHH`, under the dist-tag `dev`. npm takes a version once and
+never again, so a development version is a commit, as a timestamped Maven snapshot is: the commit
+makes two commits two versions, which the time alone does not, and the time puts them in the order
+they were made. No range of versions a project writes reaches one, so only a project that names it
+exactly gets it. `npm install @raoh/core` takes `latest`, which is a release. `scripts/publish.sh`
+says what version a ref makes and publishes it, and CI runs it as a dry run for a development
+version and for a release on every pull request, so the path a tag takes is taken before a tag is
+pushed:
+
+1. On a branch from `develop`, set `package.json`'s version to `X.Y.Z` and open a pull request to
+   `main`.
+2. Merge it, and tag the merge commit on `main` `vX.Y.Z`. The workflow fails a tag that is not `v`
+   and a version, that is not the version `package.json` holds, or that names a commit not on
+   `main`. It runs the whole of CI on the commit, and only once that passes publishes `X.Y.Z` under
+   `latest`.
+3. Merge `main` back into `develop`, and set `package.json` there to `<next version>-dev`.
+
+The workflow logs in with nothing: npm proves to the registry that it runs in this workflow of this
+repository, which the package's settings on npmjs.com name as its trusted publisher, and the
+registry records with each version the commit and the run it was built in. A trusted publisher is
+named for a package that exists, so the package's first version is published by hand from a
+checkout, and the trusted publisher named after it: `raoh-project/raoh-ts`, workflow `publish.yml`.
+
 ## License
 
 Apache License 2.0

@@ -1,0 +1,69 @@
+name: Publish
+
+# Publishes @raoh/core, by scripts/publish.sh, which says what version a ref makes. A commit on
+# develop is a development version under the dist-tag dev, X.Y.Z-dev with the time of the commit and
+# the commit: a version npm takes once and never again, which a caller names exactly and no range of
+# versions reaches. A tag vX.Y.Z on main publishes X.Y.Z under latest, what `npm install` takes. CI
+# runs the script with --dry-run on both on every pull request.
+#
+# npm is handed nothing to log in with: it proves to the registry that it runs in this workflow of
+# this repository (trusted publishing, the package's settings on npmjs.com naming this file), and
+# the registry records where each version was built from.
+
+on:
+  push:
+    branches: [develop]
+    tags: ['v*']
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # A tag that is no release, or a develop whose package.json is not the next version, stops here,
+  # before CI runs.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: The version to publish
+        run: scripts/publish.sh "$GITHUB_REF" --check
+
+  # Everything CI checks of a commit, on the commit that is published.
+  ci:
+    needs: check
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    needs: [check, ci]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # What npm proves to the registry that it runs here with.
+      id-token: write
+    steps:
+      # The whole history, for the time of the commit and whether it is on main.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      # No cache: what is published is built from what the lockfile names and nothing kept.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      # Trusted publishing takes npm 11.5.1 or later.
+      - name: An npm that publishes as this workflow
+        run: |
+          npm install --global npm@^11.5.1
+          npm --version
+      - name: Publish
+        run: |
+          npm ci
+          scripts/publish.sh "$GITHUB_REF"
