@@ -78,10 +78,25 @@ published_tags() {
 }
 
 # Whether `version` is newer than what `tag` names in `tags`, which it is where `tag` names nothing.
+# It is asked as the condition of an if, where the shell does not stop at a command that fails, so
+# what cannot be answered, a dist-tag naming what is no version, stops the publish here: a release
+# is not published on a guess.
 newer_than() {
-  local named
-  named=$(jq -r --arg tag "$3" '.[$tag] // empty' <<< "$2")
-  [ -z "$named" ] || node scripts/newer.mjs "$1" "$named"
+  local named answer=0
+  if ! named=$(jq -r --arg tag "$3" \
+    '.[$tag] | if . == null then "" elif type == "string" then . else error("no version") end' <<< "$2"); then
+    echo "the registry's $3 names no version: $(jq -c --arg tag "$3" '.[$tag]' <<< "$2")" >&2
+    exit 1
+  fi
+  if [ -z "$named" ]; then
+    return 0
+  fi
+  node scripts/newer.mjs "$1" "$named" || answer=$?
+  case "$answer" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) echo "the registry's $3 names $named, which is no version to order $1 against" >&2; exit 1 ;;
+  esac
 }
 
 if [[ "$ref" == refs/tags/v* ]]; then
@@ -106,6 +121,11 @@ if [[ "$ref" == refs/tags/v* ]]; then
     tags="$DIST_TAGS"
   else
     tags=$(published_tags "$name") || exit 1
+  fi
+  # What is read as the dist-tags is an object of them, or nothing is decided by it.
+  if ! jq -e 'type == "object"' <<< "$tags" > /dev/null 2>&1; then
+    echo "what the registry says of the dist-tags of $name is not an object of them: $tags" >&2
+    exit 1
   fi
   line="release-${version%.*}"
   if newer_than "$version" "$tags" latest; then

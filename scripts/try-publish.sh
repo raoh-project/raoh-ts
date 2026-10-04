@@ -9,7 +9,9 @@
 #     where latest names a development version of it, and beside a greater tag that published
 #     nothing;
 #   - a release older than latest is published under release-X.Y where it is newer than what that
-#     names, or where it names nothing, and under release-X.Y.Z, moving neither, where it is older.
+#     names, or where it names nothing, and under release-X.Y.Z, moving neither, where it is older;
+#   - a release is not published where the registry's answer is not an object of dist-tags, or a
+#     dist-tag names what is no version.
 #
 # Whatever ref CI runs for and whichever version package.json holds, the same is asked: package.json
 # is set as it is on develop and as a release sets it, and what the registry says the dist-tags name
@@ -101,6 +103,18 @@ expect "a release older than latest, newer than its line" \
 expect "a release older than latest and older than its line" \
   "$(publish_release latest 999999.0.0 "release-$line" "$line.999999")" \
   "with tag release-$release "
+
+# What cannot be answered is not answered: the dist-tags not an object, and a dist-tag naming what
+# is no version, stop the publish.
+expect "a release, where the registry's answer is not an object of dist-tags" \
+  "$(DIST_TAGS='<html>' scripts/publish.sh "refs/tags/v$release" --dry-run 2>&1)" \
+  "is not an object of them" "Publishing to"
+expect "a release, where latest names a number" \
+  "$(DIST_TAGS='{"latest":1}' scripts/publish.sh "refs/tags/v$release" --dry-run 2>&1)" \
+  "names no version" "Publishing to"
+expect "a release, where latest names what is no version" \
+  "$(publish_release latest "not-a-version")" \
+  "no version to order" "Publishing to"
 
 # A tag whose run refused it, or failed, published nothing, and has no say in what latest names.
 git tag "$greater"
