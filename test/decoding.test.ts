@@ -13,6 +13,9 @@ import {
   discriminate,
   double,
   enumOf,
+  float,
+  issueWire,
+  oneOf,
   failed,
   field,
   int,
@@ -113,12 +116,61 @@ test("keeps +0 and -0 apart in a set, and one NaN", () => {
   assert.ok(ValueSet.of([NaN, NaN]).size === 1);
 });
 
-test("escapes a path's segments once, and reads one back", () => {
+test("escapes a path's segments once, and reads back exactly the path it wrote", () => {
   const path = Path.of("a/b", "~c", 2);
 
   assert.equal(path.toString(), "/a~1b/~0c/2");
-  assert.ok(Path.parse(path.toString()).equals(path));
   assert.equal(Path.ROOT.toString(), "");
+  // A pointer does not say whether a token is a member's name or an index, so neither does a path.
+  assert.ok(Path.of("0").equals(Path.of(0)));
+  for (const pointer of ["", "/a~1b/~0c/2", "/0", "/9007199254740993", "/007", "/-1", "/"]) {
+    assert.equal(Path.parse(pointer).toString(), pointer);
+    assert.ok(Path.parse(Path.parse(pointer).toString()).equals(Path.parse(pointer)));
+  }
+  assert.throws(() => Path.ROOT.child(-1), RangeError);
+  assert.throws(() => Path.ROOT.child(2 ** 53), RangeError);
+});
+
+test("writes an issue as JSON whatever its metadata holds, every number as the number it is", () => {
+  const [long_] = long().min(10n).decode(1n).issues ?? [];
+  const [big] = long().max(9007199254740992n).decode(parse("9007199254740993")).issues ?? [];
+  const [negativeZero] = double().positive().decode(parse("-0.0")).issues ?? [];
+  const [float32] = float().min(0.1).decode(0).issues ?? [];
+  const [scaled] = decimal().min(Decimal.parse("1.50") as Decimal).decode(parse("1.2")).issues ?? [];
+  const tried = oneOf(string(), long().min(5n)).decode(1n).issues;
+
+  assert.equal(
+    JSON.stringify(long_),
+    '{"path":"","code":"out_of_range","messageKey":"out_of_range.minimum","message":"must be at least 10","meta":{"min":10,"actual":1}}',
+  );
+  assert.match(JSON.stringify(big), /"meta":\{"max":9007199254740992,"actual":9007199254740993\}/);
+  assert.match(JSON.stringify(negativeZero), /"actual":\{"float":"-0"\}/);
+  assert.match(JSON.stringify(float32), /"min":0\.1,/);
+  assert.match(JSON.stringify(scaled), /"min":"1\.50"/);
+  assert.match(JSON.stringify(tried), /"candidates":\[\{"candidate":0,"issues":\[\{"path":"","code":"type_mismatch"/);
+  assert.match(JSON.stringify(tried), /"actual":1\}\}\]\}\]/);
+  // A number of the input model is written as it was read.
+  assert.equal(JSON.stringify(parse("[9007199254740993, 1.50, -0]")), "[9007199254740993,1.50,-0]");
+});
+
+test("on an engine without JSON.rawJSON, writes a number as a JavaScript number only where that keeps it", () => {
+  const json = JSON as { rawJSON?: unknown };
+  const raw = json.rawJSON;
+  delete json.rawJSON;
+  try {
+    assert.equal(JSON.stringify(parse("[1, 0.1, 1.0E7, 1.50]")), "[1,0.1,10000000,1.5]");
+    assert.throws(() => JSON.stringify(parse("9007199254740993")), RangeError);
+    assert.throws(() => JSON.stringify(parse("-0")), RangeError);
+  } finally {
+    json.rawJSON = raw;
+  }
+});
+
+test("writes an issue's sentence in the catalogue asked for", () => {
+  const read = string().minLength(3).decode("ab");
+
+  assert.equal(read.issues?.toWire(Messages.japanese)[0]?.message, "3文字以上で入力してください");
+  assert.equal(issueWire(read.issues?.list[0] as Issue, Messages.japanese).message, "3文字以上で入力してください");
 });
 
 test("reads a catalogue of one's own, falling back to another", () => {

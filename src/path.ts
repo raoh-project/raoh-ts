@@ -1,11 +1,16 @@
 // Where in the input an issue is.
 
-/** A step into the input: an object member's name, or an array element's index. */
-export type Segment = string | number;
+/**
+ * A step into the input: a reference token of a JSON Pointer (RFC 6901). It is the name of an
+ * object's member or the index of an array's element, written in decimal; which one is for the
+ * value it is applied to to say, as RFC 6901 has it, so a path holds the text and nothing more.
+ */
+export type Segment = string;
 
 /**
- * A path into the input, kept as its segments and written as a JSON Pointer (RFC 6901) only when
- * it is reported, so that a segment is escaped exactly once.
+ * A path into the input, kept as its segments and written as a JSON Pointer only when it is
+ * reported, so that a segment is escaped exactly once. A path holds what its pointer writes and
+ * no more, so reading back what it writes gives the same path.
  *
  * A path is immutable. Walking down the input makes a child that points at its parent, so a
  * successful decode copies no segments.
@@ -22,8 +27,8 @@ export class Path {
     this.#segment = segment;
   }
 
-  /** The path of the given segments, from the root. */
-  static of(...segments: readonly Segment[]): Path {
+  /** The path of the given segments, from the root; an index is its decimal text. */
+  static of(...segments: readonly (string | number)[]): Path {
     let path = Path.ROOT;
     for (const segment of segments) {
       path = path.child(segment);
@@ -32,8 +37,7 @@ export class Path {
   }
 
   /**
-   * The path a JSON Pointer writes. A segment of decimal digits is read as an index; a pointer
-   * does not say which it was, and an index is what such a segment names in an array.
+   * The path a JSON Pointer writes, each reference token unescaped and kept as its text.
    *
    * @throws {SyntaxError} when the text is not a JSON Pointer
    */
@@ -49,15 +53,23 @@ export class Path {
       if (/~(?![01])/.test(written)) {
         throw new SyntaxError(`${JSON.stringify(pointer)} has a ~ that is not ~0 or ~1`);
       }
-      const segment = written.replaceAll("~1", "/").replaceAll("~0", "~");
-      path = path.child(/^(0|[1-9][0-9]*)$/.test(segment) ? Number(segment) : segment);
+      path = path.child(written.replaceAll("~1", "/").replaceAll("~0", "~"));
     }
     return path;
   }
 
-  /** The path one step below this one. */
-  child(segment: Segment): Path {
-    return new Path(this, segment);
+  /**
+   * The path one step below this one. An index is held as its decimal text, the token a
+   * pointer writes for it.
+   *
+   * @throws {RangeError} for a number that is not an index: negative, fractional, or beyond
+   *   the integers a JavaScript number holds exactly
+   */
+  child(segment: string | number): Path {
+    if (typeof segment === "number" && !(Number.isSafeInteger(segment) && segment >= 0)) {
+      throw new RangeError(`${segment} is not an array index`);
+    }
+    return new Path(this, String(segment));
   }
 
   /** `relative`, read as starting where this path ends. */
@@ -103,7 +115,7 @@ export class Path {
   /** The path as a JSON Pointer: `""` for the root, `/items/0/name` below it. */
   toString(): string {
     return this.segments()
-      .map((segment) => `/${String(segment).replaceAll("~", "~0").replaceAll("/", "~1")}`)
+      .map((segment) => `/${segment.replaceAll("~", "~0").replaceAll("/", "~1")}`)
       .join("");
   }
 

@@ -1,5 +1,7 @@
 // IEEE 754 binary32 and binary64 values as the Raoh Specification reads and writes them.
 
+import { JsonNumber } from "./input.ts";
+
 /** The width of a float: binary32 or binary64. */
 export type Width = 32 | 64;
 
@@ -39,9 +41,23 @@ export class Float {
     return floatMessageForm(this.value, this.width);
   }
 
-  toJSON(): number | string {
-    return Number.isFinite(this.value) && !Object.is(this.value, -0) ? this.value : this.toString();
+  /** The observation of the float: its canonical decimal, or a tag where JSON cannot carry it. */
+  toJSON(): JsonNumber | { float: string } {
+    return floatJson(this.value, this.width);
   }
+}
+
+/**
+ * A float as the Raoh Specification observes it: its canonical decimal as a JSON number, or a
+ * tag, `{"float": "-0"}`, `{"float": "NaN"}`, `{"float": "+Infinity"}` or
+ * `{"float": "-Infinity"}`, where JSON cannot carry it.
+ */
+export function floatJson(value: number, width: Width): JsonNumber | { float: string } {
+  if (Number.isNaN(value)) return { float: "NaN" };
+  if (value === Infinity) return { float: "+Infinity" };
+  if (value === -Infinity) return { float: "-Infinity" };
+  if (Object.is(value, -0)) return { float: "-0" };
+  return new JsonNumber(value === 0 ? "0" : floatMessageForm(value, width));
 }
 
 /**

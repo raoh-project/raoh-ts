@@ -4,9 +4,7 @@
 import {
   ABSENT,
   Decimal,
-  Float,
   type Issue,
-  Issues,
   JsonNumber,
   NULL,
   type Presence,
@@ -14,7 +12,8 @@ import {
   type Width,
   presentWith,
 } from "../src/index.ts";
-import { floatMessageForm, nearestFloat } from "../src/float.ts";
+import { floatJson, nearestFloat } from "../src/float.ts";
+import { type IssueWire, issueWire } from "../src/wire.ts";
 
 /** A type of the value model, as catalog/operations.json writes one. */
 export type Ty =
@@ -135,18 +134,8 @@ function readFloat(json: unknown, width: Width, ty: Ty): number {
 }
 
 /** A JSON number of exactly the text given. */
-function number(text: string): unknown {
-  return (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON(text);
-}
-
-/** A float as its observation: its canonical decimal, or a tag where JSON cannot carry it. */
-function observeFloat(value: number, width: Width): unknown {
-  if (Number.isNaN(value)) return { float: "NaN" };
-  if (value === Infinity) return { float: "+Infinity" };
-  if (value === -Infinity) return { float: "-Infinity" };
-  if (Object.is(value, -0)) return { float: "-0" };
-  if (value === 0) return number("0");
-  return number(floatMessageForm(value, width));
+function number(text: string): JsonNumber {
+  return new JsonNumber(text);
 }
 
 /** Writes `value`, a value of `ty`, as its observation, ready for `JSON.stringify`. */
@@ -165,7 +154,7 @@ export function observe(ty: Ty, value: unknown): unknown {
     case "float32":
     case "float64":
       if (typeof value !== "number") throw mismatch();
-      return observeFloat(value, ty.kind === "float32" ? 32 : 64);
+      return floatJson(value, ty.kind === "float32" ? 32 : 64);
     case "decimal":
       if (!(value instanceof Decimal)) throw mismatch();
       return value.toString();
@@ -211,36 +200,21 @@ export function observe(ty: Ty, value: unknown): unknown {
   }
 }
 
-/** Writes a metadata value as its observation, by the kind of value the implementation holds it as. */
-export function observeMeta(value: unknown): unknown {
-  if (value instanceof Float) return observeFloat(value.value, value.width);
-  if (value instanceof Decimal) return value.toString();
-  if (value instanceof Issues) return value.list.map(candidateIssue);
-  if (typeof value === "bigint") return number(value.toString());
-  if (typeof value === "number") return number(String(value));
-  if (Array.isArray(value)) return value.map(observeMeta);
-  if (typeof value === "object" && value !== null) {
-    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, observeMeta(v)]));
-  }
-  return value;
-}
-
-function metaObject(issue: Issue): unknown {
-  return Object.fromEntries(Object.entries(issue.meta).map(([k, v]) => [k, observeMeta(v)]));
-}
-
-/** An issue as a case writes one, with its English message. */
+/**
+ * An issue as a case writes one: the library's own JSON of it, which writes every metadata value
+ * as its observation, with the message key under the name the case format gives it. The issues a
+ * `one_of_failed` lists are written as raoh-java writes them, with no message key.
+ */
 export function writeIssue(issue: Issue): unknown {
-  return {
-    path: issue.path.toString(),
-    code: issue.code,
-    message_key: issue.messageKey,
-    message: issue.message(),
-    meta: metaObject(issue),
-  };
+  return caseIssue(issueWire(issue), true);
 }
 
-/** An issue a `one_of_failed` lists, as raoh-java writes it: no message key. */
-function candidateIssue(issue: Issue): unknown {
-  return { path: issue.path.toString(), code: issue.code, message: issue.message(), meta: metaObject(issue) };
+function caseIssue(written: IssueWire, keyed: boolean): unknown {
+  const { path, code, messageKey, message, meta } = written;
+  const candidates = code === "one_of_failed" ? (meta.candidates as unknown as { candidate: unknown; issues: IssueWire[] }[]) : undefined;
+  const observed =
+    candidates === undefined
+      ? meta
+      : { ...meta, candidates: candidates.map((c) => ({ candidate: c.candidate, issues: c.issues.map((i) => caseIssue(i, false)) })) };
+  return keyed ? { path, code, message_key: messageKey, message, meta: observed } : { path, code, message, meta: observed };
 }

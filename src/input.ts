@@ -8,6 +8,8 @@
 // and a decimal decoder sees the scale 1. `undefined` is an absent value, at the top as much
 // as an object's member.
 
+import { Decimal } from "./decimal.ts";
+
 /** A number of the input model: the text it is written with. */
 export class JsonNumber {
   readonly lexeme: string;
@@ -23,9 +25,30 @@ export class JsonNumber {
     return this.lexeme;
   }
 
-  toJSON(): number {
-    return Number(this.lexeme);
+  /**
+   * The number for `JSON.stringify` to write as this text. Where the engine has no
+   * `JSON.rawJSON`, a JavaScript number is given in its place only where the text it is written
+   * as denotes the same number; for one it would change, such as an integer beyond 2^53, this
+   * throws rather than write another number.
+   */
+  toJSON(): unknown {
+    const raw = (JSON as { rawJSON?: (text: string) => unknown }).rawJSON;
+    if (raw !== undefined) {
+      return raw(this.lexeme);
+    }
+    const number = Number(this.lexeme);
+    if (!Number.isFinite(number) || Object.is(number, -0) || !sameNumber(String(number), this.lexeme)) {
+      throw new RangeError(`${this.lexeme} cannot be written as a JavaScript number, and this engine has no JSON.rawJSON`);
+    }
+    return number;
   }
+}
+
+/** Whether the two JSON number texts denote the same number. */
+function sameNumber(a: string, b: string): boolean {
+  const x = Decimal.parse(a);
+  const y = Decimal.parse(b);
+  return x !== undefined && y !== undefined && x.compare(y) === 0;
 }
 
 const LEXEME = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$/;

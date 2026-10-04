@@ -27,6 +27,7 @@ export {
   string,
 } from "./scalars.ts";
 export { ValueSet } from "./set.ts";
+export { type IssueWire, issueWire, type Wire } from "./wire.ts";
 export {
   ABSENT,
   DictDecoder,

@@ -1,7 +1,8 @@
 // What a decoder that fails gives, and what decoding comes to.
 
 import { type MessageResolver, Messages } from "./messages.ts";
-import { Path, type Segment } from "./path.ts";
+import { Path } from "./path.ts";
+import { type IssueWire, issueWire } from "./wire.ts";
 
 /** What an issue is made with, besides its code. */
 export interface IssueInit {
@@ -12,7 +13,7 @@ export interface IssueInit {
   /** A sentence of the issue's own, which every catalogue leaves as it is. */
   readonly message?: string;
   /** Where the problem is, relative to where the issue is given. */
-  readonly path?: Path | readonly Segment[];
+  readonly path?: Path | readonly (string | number)[];
 }
 
 /**
@@ -64,9 +65,12 @@ export class Issue {
     });
   }
 
-  /** The issue as JSON: its path as a JSON Pointer, code, message key, English sentence and metadata. */
-  toJSON(): { path: string; code: string; messageKey: string; message: string; meta: Readonly<Record<string, unknown>> } {
-    return { path: this.path.toString(), code: this.code, messageKey: this.messageKey, message: this.message(), meta: this.meta };
+  /**
+   * The issue as JSON, with its English sentence; {@link issueWire} writes it with another
+   * catalogue's. It takes no argument: `JSON.stringify` hands `toJSON` the member name.
+   */
+  toJSON(): IssueWire {
+    return issueWire(this);
   }
 }
 
@@ -109,8 +113,14 @@ export class Issues implements Iterable<Issue> {
     return out;
   }
 
-  toJSON(): ReturnType<Issue["toJSON"]>[] {
-    return this.#list.map((issue) => issue.toJSON());
+  /** The issues as JSON, in order, their sentences written by `resolver`. */
+  toWire(resolver: MessageResolver = Messages.english): IssueWire[] {
+    return this.#list.map((issue) => issueWire(issue, resolver));
+  }
+
+  /** The issues as JSON, in order, with their English sentences. */
+  toJSON(): IssueWire[] {
+    return this.toWire();
   }
 }
 
