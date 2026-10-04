@@ -75,18 +75,20 @@ export function wire(value: unknown, resolver: MessageResolver = Messages.englis
   if (value === null || ofThisCopy(value, JsonNumber, "JsonNumber")) {
     return value;
   }
+  // A value of the value model is written as its observation writes it, before it is asked whether
+  // the input model reads it as a number: a Decimal is one there too, and its observation is a string.
+  if (ofThisCopy(value, Float, "Float")) {
+    return floatJson(value.value, value.width);
+  }
+  if (ofThisCopy(value, Decimal, "Decimal")) {
+    return value.toString();
+  }
   // A number the input model reads from an object, which JSON.rawJSON makes, is written as the
   // number it is, by the one rule that reads its text. Metadata is not input, so what is asked is
   // only whether the value is such a number, and not whether it is a value of the input model.
   const lexeme = lexemeOf(value);
   if (lexeme !== undefined) {
     return new JsonNumber(lexeme);
-  }
-  if (ofThisCopy(value, Float, "Float")) {
-    return floatJson(value.value, value.width);
-  }
-  if (ofThisCopy(value, Decimal, "Decimal")) {
-    return value.toString();
   }
   if (ofThisCopy(value, Issues, "Issues")) {
     return value.list.map((issue) => nestedIssueWire(issue, resolver) as unknown as Wire);

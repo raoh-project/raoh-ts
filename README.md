@@ -89,7 +89,10 @@ issue still wins over it.
 The codes, message keys and metadata are those of the Raoh Specification, which Raoh for Java, Go,
 Rust and PHP follow too, so the same client-side handling works for all of them.
 
-`Issues` keeps them in the order they were found. `flatten()` groups the sentences by path.
+`Issues` keeps them in the order they were found. `flatten()` groups the sentences by path, and
+`at(path)` gives the issues at one path, what a form shows beside the field it names:
+`issues.at(["lines", 0, "sku"])` is those of the first line's `sku`, and none of those above or
+below it.
 
 A path is a JSON Pointer's reference tokens, each kept as its text. RFC 6901 leaves it to the
 value a token is applied to whether `0` names a member or an index, and a `Path` says no more
@@ -147,8 +150,8 @@ kept as it is written. `parse(text)` and `decoder.decodeJson(text)` read a JSON 
 number a `JsonNumber` holding its lexeme and every object a `Map` holding its members in order.
 
 A decoder also reads what an application already has: plain objects, arrays, strings, booleans,
-`null`, and numbers as JavaScript `number` or `bigint`, or as `JSON.rawJSON` makes them, which
-keeps their text. `undefined` is an absent value. An object is a `Map` of string keys, or an object
+`null`, and numbers as JavaScript `number` or `bigint`, as a `Decimal`, which is read at its scale,
+or as `JSON.rawJSON` makes them, which keeps their text. `undefined` is an absent value. An object is a `Map` of string keys, or an object
 whose data are its own properties. What the input model has no place for — a string holding an
 unpaired surrogate, an array with a hole, a `Date`, a `Set`, a `String` object — is refused with a
 `TypeError` rather than read as some other value. Such a
