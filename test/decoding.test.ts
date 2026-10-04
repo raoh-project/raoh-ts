@@ -14,6 +14,7 @@ import {
   Path,
   ValueSet,
   decimal,
+  dict,
   discriminate,
   double,
   enumOf,
@@ -264,4 +265,40 @@ test("refuses a value another copy of the library made, where it would otherwise
   assert.throws(() => failed(new other.Issue("required")), /another copy of @raoh\/core/);
   // A copy's own values are its own.
   assert.equal(other.stringify(theirs), "[1.50]");
+});
+
+test("writes only what parse reads back, as the value it was, and refuses what the input model has no place for", () => {
+  const sparse: unknown[] = [];
+  sparse[1] = 1;
+  const refused: [string, unknown][] = [
+    ["a hole in an array", sparse],
+    ["an unpaired surrogate", "\ud800"],
+    ["a member name with an unpaired surrogate", { "\udc00": 1 }],
+    ["a Map key that is not a string", new Map<unknown, unknown>([[1, "x"]])],
+    ["a String object", new String("ab")],
+    ["a Date", new Date(0)],
+    ["a Set", new Set([1])],
+    ["a function", () => 1],
+    ["NaN", Number.NaN],
+  ];
+  for (const [what, value] of refused) {
+    assert.throws(() => stringify(value), TypeError, what);
+  }
+  // A decoder reads a value by the same rule, so what stringify refuses no decoder reads either.
+  assert.throws(() => list(int()).decode(sparse), TypeError);
+  assert.throws(() => string().decode("\ud800"), TypeError);
+  assert.throws(() => dict(int()).decode(new Map<unknown, unknown>([[1, 1]])), TypeError);
+
+  class Form {
+    name = "a";
+    lines = [1, 2.5];
+  }
+  const written: unknown[] = [
+    null, true, "é😀", "", -0, 1e-7, 1e21, 2n ** 70n, [], {}, [[[]]], new Map<string, unknown>([["1", 1], ["a", [null]]]),
+    { b: { c: "\u0000\n\"" }, a: undefined }, new Form(), parse('{"x":1.50,"y":[-0.0,1E+3]}'),
+  ];
+  for (const value of written) {
+    const text = stringify(value);
+    assert.equal(stringify(parse(text)), text, text);
+  }
 });

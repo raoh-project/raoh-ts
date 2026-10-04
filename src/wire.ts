@@ -10,7 +10,7 @@
 
 import { Decimal } from "./decimal.ts";
 import { Float, floatJson } from "./float.ts";
-import { JsonNumber, kindOf, lexemeOf } from "./input.ts";
+import { JsonNumber, lexemeOf } from "./input.ts";
 import type { Issue } from "./issue.ts";
 import { Issues } from "./issue.ts";
 import { type MessageResolver, Messages } from "./messages.ts";
@@ -76,9 +76,11 @@ export function wire(value: unknown, resolver: MessageResolver = Messages.englis
     return value;
   }
   // A number the input model reads from an object, which JSON.rawJSON makes, is written as the
-  // number it is, by the one rule that reads it.
-  if (kindOf(value) === "number") {
-    return new JsonNumber(lexemeOf(value) as string);
+  // number it is, by the one rule that reads its text. Metadata is not input, so what is asked is
+  // only whether the value is such a number, and not whether it is a value of the input model.
+  const lexeme = lexemeOf(value);
+  if (lexeme !== undefined) {
+    return new JsonNumber(lexeme);
   }
   if (ofThisCopy(value, Float, "Float")) {
     return floatJson(value.value, value.width);

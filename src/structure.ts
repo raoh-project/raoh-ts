@@ -2,7 +2,7 @@
 // between decoders.
 
 import { Chain, Decoder, type Run, decoder } from "./decoder.ts";
-import { isObject, kindOf, memberOf, membersOf } from "./input.ts";
+import { elementsOf, isObject, kindOf, memberOf, membersOf } from "./input.ts";
 import { Issue, Issues, type Result, failed, ok } from "./issue.ts";
 import { compareCodePoints, includesSame, keyOf, same } from "./meta.ts";
 import type { Path } from "./path.ts";
@@ -166,7 +166,7 @@ export function list<E>(element: Decoder<E>): ListDecoder<E> {
     if (wrong !== undefined) {
       return failed(wrong);
     }
-    return gathered((input as unknown[]).map((item, i) => element.decodeAt(item, path.child(i))));
+    return gathered(elementsOf(input as unknown[]).map((item, i) => element.decodeAt(item, path.child(i))));
   }, element);
 }
 

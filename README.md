@@ -146,12 +146,16 @@ number a `JsonNumber` holding its lexeme and every object a `Map` holding its me
 
 A decoder also reads what an application already has: plain objects, arrays, strings, booleans,
 `null`, and numbers as JavaScript `number` or `bigint`, or as `JSON.rawJSON` makes them, which
-keeps their text. `undefined` is an absent value. Such a
+keeps their text. `undefined` is an absent value. An object is a `Map` of string keys, or an object
+whose data are its own properties. What the input model has no place for — a string holding an
+unpaired surrogate, an array with a hole, a `Date`, a `Set`, a `String` object — is refused with a
+`TypeError` rather than read as some other value. Such a
 number has already been converted, so a decoder reads the number it is, not the text it was:
 `1.50` read by `JSON.parse` is 1.5, and `decimal()` gives it with scale 1; an integer beyond 2⁵³
 has already been rounded. Read the text with `parse` where that matters.
 
-`stringify(value)` writes a value of the input model back as JSON text, as `parse` reads it:
+`stringify(value)` writes a value of the input model back as JSON text, reading it by the same
+rule, so that whatever it writes `parse` reads back as the value it was:
 each number as its lexeme and each object's members in order. It is how a value is handed on to
 something that reads JSON text, without a number rounded or a member moved, which
 `JSON.stringify` does to a `Map` and to an object's integer-like member names.
