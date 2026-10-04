@@ -1,5 +1,7 @@
 // A decimal number that keeps the scale it was written with.
 
+import { tagOf } from "./copy.ts";
+
 const NUMBER = /^([+-]?)([0-9]+)(?:\.([0-9]*))?(?:[eE]([+-]?[0-9]+))?$|^([+-]?)\.([0-9]+)(?:[eE]([+-]?[0-9]+))?$/;
 
 const INT32_MIN = -(2 ** 31);
@@ -46,6 +48,10 @@ export class Decimal {
     }
     const magnitude = BigInt(whole + fraction);
     return new Decimal(sign === "-" ? -magnitude : magnitude, scale);
+  }
+
+  get [Symbol.toStringTag](): string {
+    return tagOf("Decimal");
   }
 
   /** The decimal of an integer, at scale 0. */

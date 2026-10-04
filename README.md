@@ -79,6 +79,11 @@ Each issue has a `path` (a `Path`, written as a JSON Pointer), a `code` such as 
 catalogue and `issue.message(Messages.japanese)` from the Japanese one. The only sentence an issue
 carries is one its maker gave, which every catalogue leaves as it is.
 
+A catalogue has a template for the issues of the Raoh Specification. A library that gives issues
+of its own, which no catalogue knows, says what to write for them with
+`Messages.english.withFallback((issue) => ...)`; a catalogue that does have a template for such an
+issue still wins over it.
+
 The codes, message keys and metadata are those of the Raoh Specification, which Raoh for Java, Go,
 Rust and PHP follow too, so the same client-side handling works for all of them.
 
@@ -140,14 +145,32 @@ kept as it is written. `parse(text)` and `decoder.decodeJson(text)` read a JSON 
 number a `JsonNumber` holding its lexeme and every object a `Map` holding its members in order.
 
 A decoder also reads what an application already has: plain objects, arrays, strings, booleans,
-`null`, and numbers as JavaScript `number` or `bigint`. `undefined` is an absent value. Such a
+`null`, and numbers as JavaScript `number` or `bigint`, or as `JSON.rawJSON` makes them, which
+keeps their text. `undefined` is an absent value. An object is a `Map` of string keys, or an object
+whose data are its own properties. What the input model has no place for — a string holding an
+unpaired surrogate, an array with a hole, a `Date`, a `Set`, a `String` object — is refused with a
+`TypeError` rather than read as some other value. Such a
 number has already been converted, so a decoder reads the number it is, not the text it was:
 `1.50` read by `JSON.parse` is 1.5, and `decimal()` gives it with scale 1; an integer beyond 2⁵³
 has already been rounded. Read the text with `parse` where that matters.
 
+`stringify(value)` writes a value of the input model back as JSON text, reading it by the same
+rule, so that whatever it writes `parse` reads back as the value it was:
+each number as its lexeme and each object's members in order. It is how a value is handed on to
+something that reads JSON text, without a number rounded or a member moved, which
+`JSON.stringify` does to a `Map` and to an object's integer-like member names.
+
 The values a decoder gives are a `number` for `int`, `float` and `double`, a `bigint` for `long`, a
 `Decimal` (a coefficient and a scale) for `decimal`, a `ValueSet` for `toSet`, which tells +0 from
 -0 as a JavaScript `Set` does not, and a `Map` for `dict`.
+
+## A library built on Raoh
+
+A library whose decoders, issues or paths an application combines with its own, as Souther's
+`@souther/wasm` offers each type of a model as a `Decoder`, depends on `@raoh/core` as a peer
+dependency, so that the library and the application share one copy. A value one copy made is no
+instance of another copy's classes; where one is met anyway, such as a `Path` or a `JsonNumber` of
+another copy, it is refused with a `TypeError` that says so, rather than read as some other value.
 
 ## Conformance
 

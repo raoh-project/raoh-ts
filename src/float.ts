@@ -1,6 +1,7 @@
 // IEEE 754 binary32 and binary64 values as the Raoh Specification reads and writes them.
 
 import { JsonNumber } from "./input.ts";
+import { tagOf } from "./copy.ts";
 
 /** The width of a float: binary32 or binary64. */
 export type Width = 32 | 64;
@@ -30,6 +31,10 @@ export class Float {
   constructor(value: number, width: Width) {
     this.value = width === 32 ? Math.fround(value) : value;
     this.width = width;
+  }
+
+  get [Symbol.toStringTag](): string {
+    return tagOf("Float");
   }
 
   valueOf(): number {

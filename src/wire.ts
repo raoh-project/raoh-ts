@@ -10,11 +10,12 @@
 
 import { Decimal } from "./decimal.ts";
 import { Float, floatJson } from "./float.ts";
-import { JsonNumber } from "./input.ts";
+import { JsonNumber, lexemeOf } from "./input.ts";
 import type { Issue } from "./issue.ts";
 import { Issues } from "./issue.ts";
 import { type MessageResolver, Messages } from "./messages.ts";
 import { ValueSet } from "./set.ts";
+import { ofThisCopy } from "./copy.ts";
 
 /** A JSON value as this library writes one: every number a JsonNumber of its exact text. */
 export type Wire = null | boolean | string | JsonNumber | readonly Wire[] | { readonly [member: string]: Wire };
@@ -71,19 +72,26 @@ export function wire(value: unknown, resolver: MessageResolver = Messages.englis
     case "undefined":
       return null;
   }
-  if (value === null || value instanceof JsonNumber) {
+  if (value === null || ofThisCopy(value, JsonNumber, "JsonNumber")) {
     return value;
   }
-  if (value instanceof Float) {
+  // A number the input model reads from an object, which JSON.rawJSON makes, is written as the
+  // number it is, by the one rule that reads its text. Metadata is not input, so what is asked is
+  // only whether the value is such a number, and not whether it is a value of the input model.
+  const lexeme = lexemeOf(value);
+  if (lexeme !== undefined) {
+    return new JsonNumber(lexeme);
+  }
+  if (ofThisCopy(value, Float, "Float")) {
     return floatJson(value.value, value.width);
   }
-  if (value instanceof Decimal) {
+  if (ofThisCopy(value, Decimal, "Decimal")) {
     return value.toString();
   }
-  if (value instanceof Issues) {
+  if (ofThisCopy(value, Issues, "Issues")) {
     return value.list.map((issue) => nestedIssueWire(issue, resolver) as unknown as Wire);
   }
-  if (Array.isArray(value) || value instanceof ValueSet) {
+  if (Array.isArray(value) || ofThisCopy(value, ValueSet, "ValueSet")) {
     return [...value].map((item) => wire(item, resolver));
   }
   if (value instanceof Map) {

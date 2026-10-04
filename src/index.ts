@@ -4,7 +4,7 @@ export { Decimal } from "./decimal.ts";
 export { Chain, Decoder, type Run, decoder, nullable, recover, recoverWith, withDefault } from "./decoder.ts";
 export * as encode from "./encode.ts";
 export { Float, type Width } from "./float.ts";
-export { JsonNumber, type Kind, kindOf, parse } from "./input.ts";
+export { JsonNumber, type Kind, kindOf, parse, stringify } from "./input.ts";
 export { Issue, type IssueInit, Issues, type Failed, type Ok, type Result, failed, ok } from "./issue.ts";
 export { INVALID_FORMAT_JSON, type MessageResolver, Messages } from "./messages.ts";
 export { messageForm, same } from "./meta.ts";

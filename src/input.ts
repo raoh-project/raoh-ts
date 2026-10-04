@@ -9,6 +9,7 @@
 // as an object's member.
 
 import { Decimal } from "./decimal.ts";
+import { ofThisCopy, tagOf } from "./copy.ts";
 
 /** A number of the input model: the text it is written with. */
 export class JsonNumber {
@@ -19,6 +20,10 @@ export class JsonNumber {
       throw new SyntaxError(`${JSON.stringify(lexeme)} is not a JSON number`);
     }
     this.lexeme = lexeme;
+  }
+
+  get [Symbol.toStringTag](): string {
+    return tagOf("JsonNumber");
   }
 
   toString(): string {
@@ -56,7 +61,18 @@ const LEXEME = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$/;
 /** The kinds of value of the input model, and `missing` for no value at all. */
 export type Kind = "null" | "boolean" | "number" | "string" | "array" | "object" | "missing";
 
-/** The kind of `value`, as an issue's `actual` names it. */
+/**
+ * The kind of `value`, as an issue's `actual` names it.
+ *
+ * This is where a JavaScript value is read as a value of the input model, for a decoder and for
+ * {@link stringify} alike. A string is one only where it is a sequence of Unicode scalar values;
+ * an object is a `Map` of string keys, or an object whose data are its own properties, plain or an
+ * instance of a class of the program's. A value that holds its data elsewhere — a `Date`, a `Set`,
+ * a `String` or `Number` object, a typed array, a function — is no value of the input model, and
+ * reading it as an object of no members, or of its characters, would read something it is not.
+ *
+ * @throws {TypeError} for a value that is no value of the input model
+ */
 export function kindOf(value: unknown): Kind {
   if (value === undefined) {
     return "missing";
@@ -71,13 +87,65 @@ export function kindOf(value: unknown): Kind {
     case "bigint":
       return "number";
     case "string":
+      wellFormed(value);
       return "string";
-    default:
-      if (value instanceof JsonNumber) {
+    case "object":
+      if (ofThisCopy(value, JsonNumber, "JsonNumber") || rawNumber(value) !== undefined) {
         return "number";
       }
-      return Array.isArray(value) ? "array" : "object";
+      if (Array.isArray(value)) {
+        return "array";
+      }
+      if (value instanceof Map || Object.prototype.toString.call(value) === "[object Object]") {
+        return "object";
+      }
+      throw new TypeError(`${Object.prototype.toString.call(value)} is no value of the input model`);
+    default:
+      throw new TypeError(`a ${typeof value} is no value of the input model`);
   }
+}
+
+/** `text`, refused where it is not a sequence of Unicode scalar values, which no JSON text holds. */
+function wellFormed(text: string): string {
+  if (!text.isWellFormed()) {
+    throw new TypeError(`${JSON.stringify(text)} holds an unpaired surrogate, and is no string of the input model`);
+  }
+  return text;
+}
+
+/**
+ * The elements of an array of the input model, in order.
+ *
+ * @throws {TypeError} for an array with a hole, a place no value is at, which no JSON text writes
+ */
+export function elementsOf(value: readonly unknown[]): unknown[] {
+  const out: unknown[] = [];
+  for (let i = 0; i < value.length; i += 1) {
+    if (!(i in value)) {
+      throw new TypeError(`an array with no element at ${i} is no value of the input model`);
+    }
+    out.push(value[i]);
+  }
+  return out;
+}
+
+const isRawJSON = (JSON as { isRawJSON?: (value: unknown) => boolean }).isRawJSON;
+
+/**
+ * The text of a number `JSON.rawJSON` made, which is how JavaScript itself carries a number as it
+ * is written; `undefined` for any other value.
+ *
+ * @throws {TypeError} for raw JSON that is not a number, which is no value of the input model
+ */
+function rawNumber(value: unknown): string | undefined {
+  if (isRawJSON === undefined || !isRawJSON(value)) {
+    return undefined;
+  }
+  const text = (value as { rawJSON: string }).rawJSON;
+  if (!LEXEME.test(text)) {
+    throw new TypeError(`raw JSON ${text} is not a number, and only a number is read from raw JSON`);
+  }
+  return text;
 }
 
 /** Whether `value` is an object of the input model. */
@@ -91,8 +159,12 @@ export function isObject(value: unknown): value is object {
  * 1e21 read by `JSON.parse` is still an integer to an integer decoder.
  */
 export function lexemeOf(value: unknown): string | undefined {
-  if (value instanceof JsonNumber) {
+  if (ofThisCopy(value, JsonNumber, "JsonNumber")) {
     return value.lexeme;
+  }
+  const raw = rawNumber(value);
+  if (raw !== undefined) {
+    return raw;
   }
   if (typeof value === "bigint") {
     return value.toString();
@@ -109,13 +181,22 @@ export function lexemeOf(value: unknown): string | undefined {
   return undefined;
 }
 
-/** The members of an object of the input model, in order; a member whose value is `undefined` is absent. */
+/**
+ * The members of an object of the input model, in order; a member whose value is `undefined` is
+ * absent.
+ *
+ * @throws {TypeError} for a `Map` with a key that is not a string, and for a name that is not a
+ *   sequence of Unicode scalar values: no JSON text names a member so
+ */
 export function membersOf(value: object): [string, unknown][] {
   const entries = value instanceof Map ? [...(value as Map<unknown, unknown>).entries()] : Object.entries(value);
   const out: [string, unknown][] = [];
   for (const [name, member] of entries) {
-    if (typeof name === "string" && member !== undefined) {
-      out.push([name, member]);
+    if (typeof name !== "string") {
+      throw new TypeError(`a Map with the key ${String(name)}, which is not a string, is no object of the input model`);
+    }
+    if (member !== undefined) {
+      out.push([wellFormed(name), member]);
     }
   }
   return out;
@@ -145,6 +226,76 @@ export function parse(text: string): unknown {
     reader.fail("text after the value");
   }
   return value;
+}
+
+/**
+ * Writes a value of the input model as JSON text, as {@link parse} reads it back: every number as
+ * its lexeme, and every object's members in their order, a `Map`'s as it holds them. This is how
+ * a value is handed on to what reads JSON text and not JavaScript values, such as a module across
+ * a boundary, without a number rounded or a member moved: `JSON.stringify` writes a `Map` as `{}`
+ * and an object's integer-like member names before its others.
+ *
+ * What it writes, `parse` reads, as the value it was: a value is read as {@link kindOf} reads one,
+ * the same way a decoder reads it, so what the input model has no place for is refused here rather
+ * than written as text `parse` refuses or as some other value.
+ *
+ * @throws {TypeError} for `undefined` where a value has to be, a hole in an array, a number that is
+ *   NaN or an infinity, a string or member name holding an unpaired surrogate, and any value that
+ *   is no value of the input model
+ */
+export function stringify(value: unknown): string {
+  const out: string[] = [];
+  write(value, out, 0);
+  return out.join("");
+}
+
+function write(value: unknown, out: string[], depth: number): void {
+  if (depth > DEPTH) {
+    throw new TypeError(`nesting deeper than ${DEPTH}`);
+  }
+  switch (kindOf(value)) {
+    case "missing":
+      throw new TypeError("an absent value has no JSON text");
+    case "null":
+      out.push("null");
+      return;
+    case "boolean":
+      out.push(value ? "true" : "false");
+      return;
+    case "string":
+      out.push(JSON.stringify(value));
+      return;
+    case "number": {
+      const lexeme = lexemeOf(value);
+      if (lexeme === undefined) {
+        throw new TypeError(`${String(value)} is in no JSON text`);
+      }
+      out.push(lexeme);
+      return;
+    }
+    case "array": {
+      out.push("[");
+      elementsOf(value as unknown[]).forEach((item, i) => {
+        if (i > 0) {
+          out.push(",");
+        }
+        write(item, out, depth + 1);
+      });
+      out.push("]");
+      return;
+    }
+    case "object": {
+      out.push("{");
+      membersOf(value as object).forEach(([name, member], i) => {
+        if (i > 0) {
+          out.push(",");
+        }
+        out.push(JSON.stringify(name), ":");
+        write(member, out, depth + 1);
+      });
+      out.push("}");
+    }
+  }
 }
 
 /** How deep arrays and objects may nest before the text is refused rather than the stack overflowing. */

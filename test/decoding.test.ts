@@ -2,6 +2,10 @@
 // a decoder gives, and the API a caller writes against.
 
 import assert from "node:assert/strict";
+import { cpSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import {
   Decimal,
@@ -10,6 +14,7 @@ import {
   Path,
   ValueSet,
   decimal,
+  dict,
   discriminate,
   double,
   enumOf,
@@ -27,7 +32,10 @@ import {
   optionalField,
   parse,
   string,
+  stringify,
 } from "../src/index.ts";
+
+const CATALOG_JA_TEXT = "raoh.required=必須です";
 
 test("reads what JSON.parse gives as it reads what parse gives, short of what JSON.parse loses", () => {
   const point = object(field("x", int()), field("y", long()), field("price", decimal()));
@@ -204,4 +212,93 @@ test("reads a catalogue of one's own, falling back to another", () => {
   assert.equal(short?.message(french), "au moins 3 éléments");
   assert.equal(email?.message(french), "format invalide");
   assert.equal(required?.message(french), "is required");
+});
+
+test("writes a value of the input model as the JSON text parse reads it back from", () => {
+  const text = '{"b":1.50,"1":[9007199254740993,-0,true,null,"é"],"a":{}}';
+
+  assert.equal(stringify(parse(text)), text);
+  // A plain object's members as it holds them, an absent member left out, numbers as they are.
+  assert.equal(stringify({ x: 1, y: undefined, z: [2n, -0] }), '{"x":1,"z":[2,-0]}');
+  assert.throws(() => stringify(undefined), TypeError);
+  assert.throws(() => stringify([NaN]), TypeError);
+});
+
+test("reads a number JSON.rawJSON made as the number it is written as", () => {
+  const raw = (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON;
+
+  assert.equal(String(decimal().decode(raw("1.50")).value), "1.50");
+  assert.equal(long().decode(raw("9007199254740993")).value, 9007199254740993n);
+  assert.equal(stringify([raw("1.50")]), "[1.50]");
+  assert.throws(() => string().decode(raw('"text"')), TypeError);
+  // And written as that number where an issue holds it, by the same rule that read it.
+  const held = new Issue("missing_element", { meta: { expected: raw("12345678901234567890.5") } });
+  assert.equal(JSON.stringify(held.toJSON().meta), '{"expected":12345678901234567890.5}');
+});
+
+test("writes what a fallback says of an issue no catalogue has a template for, in every language over it", () => {
+  const own = (issue: Issue) => `broken: ${String(issue.meta.rule)}`;
+  const english = Messages.english.withFallback(own);
+  const japanese = Messages.fromProperties(CATALOG_JA_TEXT).fallingBackTo(english);
+  const ruled = new Issue("invariant_violation", { meta: { rule: "even" } });
+
+  assert.equal(ruled.message(english), "broken: even");
+  assert.equal(ruled.message(japanese), "broken: even");
+  assert.equal(ruled.message(Messages.english), "validation failed: invariant_violation");
+  // A template, where a catalogue has one, wins over the fallback.
+  assert.equal(new Issue("required").message(japanese), "必須です");
+  assert.equal(ruled.message(english.withOverrides({ invariant_violation: "rule {rule}" })), "rule even");
+});
+
+test("refuses a value another copy of the library made, where it would otherwise be misread", async () => {
+  // The sources copied somewhere else are another copy, as one a library brings with it would be.
+  const elsewhere = mkdtempSync(join(tmpdir(), "raoh-copy-"));
+  cpSync(join(import.meta.dirname, "..", "src"), elsewhere, { recursive: true });
+  const other = (await import(pathToFileURL(join(elsewhere, "index.ts")).href)) as typeof import("../src/index.ts");
+  const theirs = other.parse("[1.50]") as unknown[];
+
+  assert.throws(() => stringify(theirs), /another copy of @raoh\/core/);
+  assert.throws(() => decimal().decode(theirs[0]), /another copy of @raoh\/core/);
+  assert.throws(() => new Issue("required").under(other.Path.of("a")), /another copy of @raoh\/core/);
+  assert.throws(() => new Issue("required", { path: other.Path.of("a") }), /another copy of @raoh\/core/);
+  assert.throws(() => JSON.stringify(new Issue("x", { meta: { bound: other.Decimal.of(1) } })), /another copy/);
+  assert.throws(() => failed(new other.Issue("required")), /another copy of @raoh\/core/);
+  // A copy's own values are its own.
+  assert.equal(other.stringify(theirs), "[1.50]");
+});
+
+test("writes only what parse reads back, as the value it was, and refuses what the input model has no place for", () => {
+  const sparse: unknown[] = [];
+  sparse[1] = 1;
+  const refused: [string, unknown][] = [
+    ["a hole in an array", sparse],
+    ["an unpaired surrogate", "\ud800"],
+    ["a member name with an unpaired surrogate", { "\udc00": 1 }],
+    ["a Map key that is not a string", new Map<unknown, unknown>([[1, "x"]])],
+    ["a String object", new String("ab")],
+    ["a Date", new Date(0)],
+    ["a Set", new Set([1])],
+    ["a function", () => 1],
+    ["NaN", Number.NaN],
+  ];
+  for (const [what, value] of refused) {
+    assert.throws(() => stringify(value), TypeError, what);
+  }
+  // A decoder reads a value by the same rule, so what stringify refuses no decoder reads either.
+  assert.throws(() => list(int()).decode(sparse), TypeError);
+  assert.throws(() => string().decode("\ud800"), TypeError);
+  assert.throws(() => dict(int()).decode(new Map<unknown, unknown>([[1, 1]])), TypeError);
+
+  class Form {
+    name = "a";
+    lines = [1, 2.5];
+  }
+  const written: unknown[] = [
+    null, true, "é😀", "", -0, 1e-7, 1e21, 2n ** 70n, [], {}, [[[]]], new Map<string, unknown>([["1", 1], ["a", [null]]]),
+    { b: { c: "\u0000\n\"" }, a: undefined }, new Form(), parse('{"x":1.50,"y":[-0.0,1E+3]}'),
+  ];
+  for (const value of written) {
+    const text = stringify(value);
+    assert.equal(stringify(parse(text)), text, text);
+  }
 });

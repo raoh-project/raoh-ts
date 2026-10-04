@@ -1,6 +1,7 @@
 // A set of values compared as the value model compares them.
 
 import { keyOf, same } from "./meta.ts";
+import { ofThisCopy, tagOf } from "./copy.ts";
 
 /**
  * A finite set whose members are told apart as the value model tells values apart: +0 and -0 are
@@ -36,6 +37,10 @@ export class ValueSet<E> implements Iterable<E> {
     return new ValueSet(Object.freeze(members), keys);
   }
 
+  get [Symbol.toStringTag](): string {
+    return tagOf("ValueSet");
+  }
+
   get size(): number {
     return this.#members.length;
   }
@@ -57,7 +62,7 @@ export class ValueSet<E> implements Iterable<E> {
 
   /** Whether the two sets have the same members. */
   equals(other: unknown): boolean {
-    return other instanceof ValueSet && other.size === this.size && this.#members.every((member) => other.has(member));
+    return ofThisCopy(other, ValueSet, "ValueSet") && other.size === this.size && this.#members.every((member) => other.has(member));
   }
 
   toJSON(): readonly E[] {
