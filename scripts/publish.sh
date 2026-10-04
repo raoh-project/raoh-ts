@@ -10,9 +10,10 @@
 # and under release-X.Y where it is not, so a release whose run comes after a newer one's never takes
 # latest from it. What latest names is asked of the registry, which holds what was published: a tag
 # whose run refused it or failed published nothing, and has no say. One run publishes at a time, so
-# nothing is published between the asking and the publishing. LATEST, where it is set, is taken for
-# what the registry says, as a dry run sets it. The registry says it to a publish, which logs in as
-# the trusted publisher, and to nobody who does not log in; so a check names both and asks neither.
+# nothing is published between the asking and the publishing. The registry's dist-tags of a public
+# package are read without logging in, so the workflow does nothing as the trusted publisher but
+# publish. LATEST, where it is set, is taken for what the registry says, as a dry run sets it; a
+# check, which decides nothing, names both dist-tags and asks neither.
 #
 # Any other ref is a development version under the dist-tag dev: package.json holds the next version
 # as X.Y.Z-dev, and the version published is that, the time of the commit and the commit,
@@ -41,6 +42,34 @@ esac
 
 held=$(jq -r .version package.json)
 name=$(jq -r .name package.json)
+
+# What latest names in the registry, or nothing where there is no latest or no such package. The
+# registry answers a package it has not got as it answers one it will not say of to whoever has not
+# logged in, so that answer is asked again of the package itself, which says plainly that it is not
+# there. Anything else fails the publish: a release is not published on a guess.
+latest_published() {
+  local escaped="${1/\//%2f}" code tags
+  tags=$(mktemp)
+  code=$(curl --silent --show-error --output "$tags" --write-out '%{http_code}' \
+    "https://registry.npmjs.org/-/package/$escaped/dist-tags") || { rm -f "$tags"; return 1; }
+  case "$code" in
+    200)
+      jq -r '.latest // empty' "$tags"
+      rm -f "$tags" ;;
+    401|404)
+      rm -f "$tags"
+      code=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+        "https://registry.npmjs.org/$escaped") || return 1
+      if [ "$code" != 404 ]; then
+        echo "the registry would not say what latest names of $1: HTTP $code" >&2
+        return 1
+      fi ;;
+    *)
+      rm -f "$tags"
+      echo "the registry would not say what latest names of $1: HTTP $code" >&2
+      return 1 ;;
+  esac
+}
 if [[ "$ref" == refs/tags/v* ]]; then
   version="${ref#refs/tags/v}"
   if ! [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
@@ -56,23 +85,14 @@ if [[ "$ref" == refs/tags/v* ]]; then
     exit 1
   fi
   if [ "$mode" = --check ]; then
-    # Which of the two is asked of the registry as the release is published, with what a publish
-    # logs in with, which a check has not.
     current="unknown until it is published"
   elif [ -n "${LATEST+set}" ]; then
     current="$LATEST"
-  elif tags=$(npm dist-tag ls "$name" 2>&1); then
-    current=$(sed -n 's/^latest: //p' <<< "$tags")
-  elif grep -q E404 <<< "$tags"; then
-    # The registry has no such package: nothing is published.
-    current=""
   else
-    # What latest names is not known, and a release is not published on a guess.
-    echo "the registry would not say what latest names: $tags" >&2
-    exit 1
+    current=$(latest_published "$name") || exit 1
   fi
-  # A package with nothing published has no latest, and its first release takes it. The first
-  # version published takes latest whatever it was published under, which may be a development one.
+  # A package with no latest takes its release as latest, and so does one whose latest names a
+  # development version of it, which SemVer orders below the release.
   if [ "$mode" = --check ]; then
     dist_tag="latest or release-${version%.*}"
   elif [ -z "$current" ] || node scripts/newer.mjs "$version" "$current"; then

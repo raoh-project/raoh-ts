@@ -240,7 +240,11 @@ The workflow logs in with nothing: npm proves to the registry that it runs in th
 repository, which the package's settings on npmjs.com name as its trusted publisher, and the
 registry records with each version the commit and the run it was built in. A trusted publisher is
 named for a package that exists, so the package's first version is published by hand from a
-checkout, and the trusted publisher named after it: `raoh-project/raoh-ts`, workflow `publish.yml`.
+checkout, and the trusted publisher named after it: repository `raoh-project/raoh-ts`, workflow
+`publish.yml`, with `npm publish` allowed. A trusted publisher named since September 3, 2026 allows
+`npm stage publish` and allows `npm publish` only where it is chosen, and the workflow publishes with
+`npm publish`. It needs nothing else: it reads what `latest` names from the registry without
+logging in, as anyone can of a public package.
 
 ## License
 
