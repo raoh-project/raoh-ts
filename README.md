@@ -79,6 +79,11 @@ Each issue has a `path` (a `Path`, written as a JSON Pointer), a `code` such as 
 catalogue and `issue.message(Messages.japanese)` from the Japanese one. The only sentence an issue
 carries is one its maker gave, which every catalogue leaves as it is.
 
+A catalogue has a template for the issues of the Raoh Specification. A library that gives issues
+of its own, which no catalogue knows, says what to write for them with
+`Messages.english.withFallback((issue) => ...)`; a catalogue that does have a template for such an
+issue still wins over it.
+
 The codes, message keys and metadata are those of the Raoh Specification, which Raoh for Java, Go,
 Rust and PHP follow too, so the same client-side handling works for all of them.
 
@@ -140,10 +145,16 @@ kept as it is written. `parse(text)` and `decoder.decodeJson(text)` read a JSON 
 number a `JsonNumber` holding its lexeme and every object a `Map` holding its members in order.
 
 A decoder also reads what an application already has: plain objects, arrays, strings, booleans,
-`null`, and numbers as JavaScript `number` or `bigint`. `undefined` is an absent value. Such a
+`null`, and numbers as JavaScript `number` or `bigint`, or as `JSON.rawJSON` makes them, which
+keeps their text. `undefined` is an absent value. Such a
 number has already been converted, so a decoder reads the number it is, not the text it was:
 `1.50` read by `JSON.parse` is 1.5, and `decimal()` gives it with scale 1; an integer beyond 2⁵³
 has already been rounded. Read the text with `parse` where that matters.
+
+`stringify(value)` writes a value of the input model back as JSON text, as `parse` reads it:
+each number as its lexeme and each object's members in order. It is how a value is handed on to
+something that reads JSON text, without a number rounded or a member moved, which
+`JSON.stringify` does to a `Map` and to an object's integer-like member names.
 
 The values a decoder gives are a `number` for `int`, `float` and `double`, a `bigint` for `long`, a
 `Decimal` (a coefficient and a scale) for `decimal`, a `ValueSet` for `toSet`, which tells +0 from

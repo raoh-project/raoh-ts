@@ -27,7 +27,10 @@ import {
   optionalField,
   parse,
   string,
+  stringify,
 } from "../src/index.ts";
+
+const CATALOG_JA_TEXT = "raoh.required=必須です";
 
 test("reads what JSON.parse gives as it reads what parse gives, short of what JSON.parse loses", () => {
   const point = object(field("x", int()), field("y", long()), field("price", decimal()));
@@ -204,4 +207,37 @@ test("reads a catalogue of one's own, falling back to another", () => {
   assert.equal(short?.message(french), "au moins 3 éléments");
   assert.equal(email?.message(french), "format invalide");
   assert.equal(required?.message(french), "is required");
+});
+
+test("writes a value of the input model as the JSON text parse reads it back from", () => {
+  const text = '{"b":1.50,"1":[9007199254740993,-0,true,null,"é"],"a":{}}';
+
+  assert.equal(stringify(parse(text)), text);
+  // A plain object's members as it holds them, an absent member left out, numbers as they are.
+  assert.equal(stringify({ x: 1, y: undefined, z: [2n, -0] }), '{"x":1,"z":[2,-0]}');
+  assert.throws(() => stringify(undefined), TypeError);
+  assert.throws(() => stringify([NaN]), TypeError);
+});
+
+test("reads a number JSON.rawJSON made as the number it is written as", () => {
+  const raw = (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON;
+
+  assert.equal(String(decimal().decode(raw("1.50")).value), "1.50");
+  assert.equal(long().decode(raw("9007199254740993")).value, 9007199254740993n);
+  assert.equal(stringify([raw("1.50")]), "[1.50]");
+  assert.throws(() => string().decode(raw('"text"')), TypeError);
+});
+
+test("writes what a fallback says of an issue no catalogue has a template for, in every language over it", () => {
+  const own = (issue: Issue) => `broken: ${String(issue.meta.rule)}`;
+  const english = Messages.english.withFallback(own);
+  const japanese = Messages.fromProperties(CATALOG_JA_TEXT).fallingBackTo(english);
+  const ruled = new Issue("invariant_violation", { meta: { rule: "even" } });
+
+  assert.equal(ruled.message(english), "broken: even");
+  assert.equal(ruled.message(japanese), "broken: even");
+  assert.equal(ruled.message(Messages.english), "validation failed: invariant_violation");
+  // A template, where a catalogue has one, wins over the fallback.
+  assert.equal(new Issue("required").message(japanese), "必須です");
+  assert.equal(ruled.message(english.withOverrides({ invariant_violation: "rule {rule}" })), "rule even");
 });

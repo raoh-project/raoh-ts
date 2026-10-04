@@ -73,11 +73,30 @@ export function kindOf(value: unknown): Kind {
     case "string":
       return "string";
     default:
-      if (value instanceof JsonNumber) {
+      if (value instanceof JsonNumber || rawNumber(value) !== undefined) {
         return "number";
       }
       return Array.isArray(value) ? "array" : "object";
   }
+}
+
+const isRawJSON = (JSON as { isRawJSON?: (value: unknown) => boolean }).isRawJSON;
+
+/**
+ * The text of a number `JSON.rawJSON` made, which is how JavaScript itself carries a number as it
+ * is written; `undefined` for any other value.
+ *
+ * @throws {TypeError} for raw JSON that is not a number, which is no value of the input model
+ */
+function rawNumber(value: unknown): string | undefined {
+  if (isRawJSON === undefined || !isRawJSON(value)) {
+    return undefined;
+  }
+  const text = (value as { rawJSON: string }).rawJSON;
+  if (!LEXEME.test(text)) {
+    throw new TypeError(`raw JSON ${text} is not a number, and only a number is read from raw JSON`);
+  }
+  return text;
 }
 
 /** Whether `value` is an object of the input model. */
@@ -93,6 +112,10 @@ export function isObject(value: unknown): value is object {
 export function lexemeOf(value: unknown): string | undefined {
   if (value instanceof JsonNumber) {
     return value.lexeme;
+  }
+  const raw = rawNumber(value);
+  if (raw !== undefined) {
+    return raw;
   }
   if (typeof value === "bigint") {
     return value.toString();
@@ -145,6 +168,74 @@ export function parse(text: string): unknown {
     reader.fail("text after the value");
   }
   return value;
+}
+
+/**
+ * Writes a value of the input model as JSON text, as {@link parse} reads it back: every number as
+ * its lexeme, and every object's members in their order, a `Map`'s as it holds them. This is how
+ * a value is handed on to what reads JSON text and not JavaScript values, such as a module across
+ * a boundary, without a number rounded or a member moved: `JSON.stringify` writes a `Map` as `{}`
+ * and an object's integer-like member names before its others.
+ *
+ * @throws {TypeError} for `undefined` where a value has to be, and for a value that is in no JSON
+ *   text: a number that is NaN or an infinity, a function, a symbol
+ */
+export function stringify(value: unknown): string {
+  const out: string[] = [];
+  write(value, out, 0);
+  return out.join("");
+}
+
+function write(value: unknown, out: string[], depth: number): void {
+  if (depth > DEPTH) {
+    throw new TypeError(`nesting deeper than ${DEPTH}`);
+  }
+  switch (kindOf(value)) {
+    case "missing":
+      throw new TypeError("an absent value has no JSON text");
+    case "null":
+      out.push("null");
+      return;
+    case "boolean":
+      out.push(value ? "true" : "false");
+      return;
+    case "string":
+      out.push(JSON.stringify(value));
+      return;
+    case "number": {
+      const lexeme = lexemeOf(value);
+      if (lexeme === undefined) {
+        throw new TypeError(`${String(value)} is in no JSON text`);
+      }
+      out.push(lexeme);
+      return;
+    }
+    case "array": {
+      out.push("[");
+      (value as unknown[]).forEach((item, i) => {
+        if (i > 0) {
+          out.push(",");
+        }
+        write(item, out, depth + 1);
+      });
+      out.push("]");
+      return;
+    }
+    case "object": {
+      if (typeof value !== "object") {
+        throw new TypeError(`a ${typeof value} is in no JSON text`);
+      }
+      out.push("{");
+      membersOf(value as object).forEach(([name, member], i) => {
+        if (i > 0) {
+          out.push(",");
+        }
+        out.push(JSON.stringify(name), ":");
+        write(member, out, depth + 1);
+      });
+      out.push("}");
+    }
+  }
 }
 
 /** How deep arrays and objects may nest before the text is refused rather than the stack overflowing. */

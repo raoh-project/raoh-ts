@@ -22,15 +22,22 @@ export const INVALID_FORMAT_JSON = "invalid_format.json";
  * get asked. So a layer that translates just `invalid_format` wins over a refined key such as
  * `invalid_format.email` beneath it. A template's `{name}` placeholders are filled with the
  * message forms of the issue's metadata; a placeholder naming an entry the metadata lacks stays as
- * it is written. Where no layer has a template, the sentence is `validation failed: <code>`.
+ * it is written. Where no layer has a template, the sentence is what the catalogue's fallback
+ * writes, `validation failed: <code>` unless one is given with {@link withFallback}.
  */
 export class Messages implements MessageResolver {
   readonly #templates: ReadonlyMap<string, string>;
   readonly #parent: Messages | undefined;
+  readonly #fallback: ((issue: Issue) => string) | undefined;
 
-  private constructor(templates: ReadonlyMap<string, string>, parent: Messages | undefined) {
+  private constructor(
+    templates: ReadonlyMap<string, string>,
+    parent: Messages | undefined,
+    fallback: ((issue: Issue) => string) | undefined = undefined,
+  ) {
     this.#templates = templates;
     this.#parent = parent;
+    this.#fallback = fallback;
   }
 
   /** The English catalogue of the Raoh Specification. Every issue's default message comes from it. */
@@ -75,7 +82,20 @@ export class Messages implements MessageResolver {
 
   /** This catalogue with `parent` beneath its last layer, as a locale's file sits over its parent's. */
   fallingBackTo(parent: Messages): Messages {
-    return new Messages(this.#templates, this.#parent === undefined ? parent : this.#parent.fallingBackTo(parent));
+    return new Messages(
+      this.#templates,
+      this.#parent === undefined ? parent : this.#parent.fallingBackTo(parent),
+      this.#fallback,
+    );
+  }
+
+  /**
+   * This catalogue, writing what `fallback` writes for an issue no layer has a template for. It is
+   * how a host language gives the issues of its own, which no catalogue of Raoh's knows, the
+   * sentence it has for them, and still lets a catalogue that does have a template for one win.
+   */
+  withFallback(fallback: (issue: Issue) => string): Messages {
+    return new Messages(this.#templates, this.#parent, fallback);
   }
 
   /** A layer of `overrides`, keyed by message key or code, over this catalogue. */
@@ -108,13 +128,15 @@ export class Messages implements MessageResolver {
   }
 
   resolve(issue: Issue): string {
+    let fallback: ((issue: Issue) => string) | undefined;
     for (let layer: Messages | undefined = this; layer !== undefined; layer = layer.#parent) {
       const template = layer.#templates.get(issue.messageKey) ?? layer.#templates.get(issue.code);
       if (template !== undefined) {
         return fill(template, issue.meta);
       }
+      fallback ??= layer.#fallback;
     }
-    return `validation failed: ${issue.code}`;
+    return fallback === undefined ? `validation failed: ${issue.code}` : fallback(issue);
   }
 }
 
