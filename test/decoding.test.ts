@@ -226,6 +226,9 @@ test("reads a number JSON.rawJSON made as the number it is written as", () => {
   assert.equal(long().decode(raw("9007199254740993")).value, 9007199254740993n);
   assert.equal(stringify([raw("1.50")]), "[1.50]");
   assert.throws(() => string().decode(raw('"text"')), TypeError);
+  // And written as that number where an issue holds it, by the same rule that read it.
+  const held = new Issue("missing_element", { meta: { expected: raw("12345678901234567890.5") } });
+  assert.equal(JSON.stringify(held.toJSON().meta), '{"expected":12345678901234567890.5}');
 });
 
 test("writes what a fallback says of an issue no catalogue has a template for, in every language over it", () => {

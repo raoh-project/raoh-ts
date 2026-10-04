@@ -10,7 +10,7 @@
 
 import { Decimal } from "./decimal.ts";
 import { Float, floatJson } from "./float.ts";
-import { JsonNumber } from "./input.ts";
+import { JsonNumber, kindOf, lexemeOf } from "./input.ts";
 import type { Issue } from "./issue.ts";
 import { Issues } from "./issue.ts";
 import { type MessageResolver, Messages } from "./messages.ts";
@@ -73,6 +73,11 @@ export function wire(value: unknown, resolver: MessageResolver = Messages.englis
   }
   if (value === null || value instanceof JsonNumber) {
     return value;
+  }
+  // A number the input model reads from an object, which JSON.rawJSON makes, is written as the
+  // number it is, by the one rule that reads it.
+  if (kindOf(value) === "number") {
+    return new JsonNumber(lexemeOf(value) as string);
   }
   if (value instanceof Float) {
     return floatJson(value.value, value.width);
