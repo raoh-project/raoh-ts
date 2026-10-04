@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # The oldest Node package.json says it runs on, and the current one.
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+
+  # The cases of the Raoh Specification at the commit conformance/spec.lock pins, run on this
+  # library and checked by that commit's raoh-verify against conformance/conformance.json.
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - run: npm ci
+      # The catalogue this library ships is the text of the pinned commit's.
+      - name: the message catalogue is the pinned specification's
+        run: |
+          revision="$(jq -er .revision conformance/spec.lock)"
+          git clone --quiet https://github.com/raoh-project/raoh-specification.git /tmp/raoh-specification
+          git -C /tmp/raoh-specification -c advice.detachedHead=false checkout --quiet --detach "$revision"
+          npm run catalog -- /tmp/raoh-specification
+          git diff --exit-code src/catalog.ts
+      - run: scripts/conformance.sh
+        env:
+          RAOH_SPECIFICATION_DIR: /tmp/raoh-specification
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conformance
+          path: |
+            conformance/target/runner-result.json
+            conformance/target/conformance-report.json
+          if-no-files-found: ignore
