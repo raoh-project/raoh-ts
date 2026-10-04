@@ -2,9 +2,9 @@ name: Publish
 
 # Publishes @raoh/core, by scripts/publish.sh, which says what version a ref makes. A commit on
 # develop is a development version under the dist-tag dev, X.Y.Z-dev with the time of the commit and
-# the commit: a version npm takes once and never again, which a caller names exactly and no range of
-# versions reaches. A tag vX.Y.Z on main publishes X.Y.Z under latest, what `npm install` takes. CI
-# runs the script with --dry-run on both on every pull request.
+# the commit: a version npm takes once and never again, and which a range written for releases does
+# not reach. A tag vX.Y.Z on main publishes X.Y.Z under latest, what `npm install` takes. CI runs the
+# script with --dry-run on both on every pull request.
 #
 # npm is handed nothing to log in with: it proves to the registry that it runs in this workflow of
 # this repository (trusted publishing, the package's settings on npmjs.com naming this file), and
@@ -15,9 +15,14 @@ on:
     branches: [develop]
     tags: ['v*']
 
+# One run at a time, in the order they were pushed, and none left out: each commit on develop is
+# published, and dev names the last of them. A group holds one run waiting by default, and a run
+# that comes after it takes its place, so a commit pushed while another waits would never be
+# published; queue: max holds every run that comes, up to a hundred.
 concurrency:
   group: publish
   cancel-in-progress: false
+  queue: max
 
 defaults:
   run:

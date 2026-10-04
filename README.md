@@ -205,8 +205,12 @@ on it, as that version followed by the time of the commit and the commit,
 `X.Y.Z-dev.YYYYMMDDHHMMSS.gHHHHHHHHHHHH`, under the dist-tag `dev`. npm takes a version once and
 never again, so a development version is a commit, as a timestamped Maven snapshot is: the commit
 makes two commits two versions, which the time alone does not, and the time puts them in the order
-they were made. No range of versions a project writes reaches one, so only a project that names it
-exactly gets it. `npm install @raoh/core` takes `latest`, which is a release. `scripts/publish.sh`
+they were made. `npm install @raoh/core` takes `latest`, which is a release, and a range written for
+releases, `^0.9.0`, takes no development version: npm takes a prerelease only for a range that names
+one of the same `X.Y.Z`, and `^0.9.0-dev.20261004000000.g0` takes every later one. So a project that
+means one commit writes its version exactly, `npm install --save-exact @raoh/core@<version>`, as
+`npm install` otherwise saves a range. Each commit is published in turn, in the order it was pushed,
+so `dev` names the last of them. `scripts/publish.sh`
 says what version a ref makes and publishes it, and CI runs it as a dry run for a development
 version and for a release on every pull request, so the path a tag takes is taken before a tag is
 pushed:
