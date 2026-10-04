@@ -60,11 +60,13 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      # No cache: what is published is built from what the lockfile names and nothing kept.
+      # No cache: what is published is built from what the lockfile names and nothing kept. No
+      # registry-url either: with one, setup-node writes an _authToken line into the .npmrc it hands
+      # npm, and npm, taking that for a way to log in, never asks GitHub for the token it proves it
+      # runs here with, and is refused. npm publishes to its own registry without being told.
       - uses: actions/setup-node@v5
         with:
           node-version: lts/*
-          registry-url: https://registry.npmjs.org
           package-manager-cache: false
       # Trusted publishing takes npm 11.5.1 or later.
       - name: An npm that publishes as this workflow
