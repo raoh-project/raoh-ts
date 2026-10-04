@@ -8,8 +8,8 @@
 #   - a release newer than what latest names is published under latest: where nothing is published,
 #     where latest names a development version of it, and beside a greater tag that published
 #     nothing;
-#   - a release older than latest is published under release-X.Y where it is newer than what that
-#     names, or where it names nothing, and under release-X.Y.Z, moving neither, where it is older;
+#   - a release older than latest is published under release-X.Y.Z, which names it alone, whether
+#     latest is of another line or of its own;
 #   - a release is not published where the registry's answer is not an object of dist-tags, or a
 #     dist-tag names what is no version, and each answer the registry can give is read as the
 #     publish reads it: dist-tags, what is not JSON, no such package, a refusal, and a failure.
@@ -24,6 +24,7 @@ cd "$(dirname "$0")/.."
 held="$(jq -r .version package.json)"
 release="${held%-dev}"
 line="${release%.*}"
+patch="${release##*.}"
 start="$(git rev-parse HEAD)"
 branch="$(git symbolic-ref --quiet --short HEAD || true)"
 greater="v999999.0.0"
@@ -96,14 +97,10 @@ expect "a release, with nothing published" \
   "$(publish_release)" "with tag latest"
 expect "a release, where latest names a development version of it" \
   "$(publish_release latest "$release-dev.1.20260101000000.g000000000000")" "with tag latest"
-expect "a release older than latest, with nothing in its line" \
-  "$(publish_release latest 999999.0.0)" "with tag release-$line "
-expect "a release older than latest, newer than its line" \
-  "$(publish_release latest 999999.0.0 "release-$line" "$line.0-dev.1.20260101000000.g000000000000")" \
-  "with tag release-$line "
-expect "a release older than latest and older than its line" \
-  "$(publish_release latest 999999.0.0 "release-$line" "$line.999999")" \
-  "with tag release-$release "
+expect "a release older than a latest of another line" \
+  "$(publish_release latest 999999.0.0)" "with tag release-$release "
+expect "a release older than a latest of its own line" \
+  "$(publish_release latest "$line.$((patch + 1))")" "with tag release-$release "
 
 # What cannot be answered is not answered: the dist-tags not an object, and a dist-tag naming what
 # is no version, stop the publish.
@@ -141,7 +138,7 @@ asked() {
     scripts/publish.sh "refs/tags/v$release" --dry-run 2>&1
 }
 expect "a release, where the registry names a newer latest" \
-  "$(asked 200 '{"latest":"999999.0.0"}' 200)" "with tag release-$line "
+  "$(asked 200 '{"latest":"999999.0.0"}' 200)" "with tag release-$release "
 expect "a release, where the registry answers what is not JSON" \
   "$(asked 200 '<html>' 200)" "is not an object of them" "Publishing to"
 expect "a release, where the registry has no such package" \

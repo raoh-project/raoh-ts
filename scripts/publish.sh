@@ -11,11 +11,13 @@
 # One run publishes at a time, so nothing is published between a run's asking and its publishing.
 #
 # A tag vX.Y.Z is a release: package.json holds that version, and the commit is on main. It takes
-# latest where it is newer than what latest names, and otherwise release-X.Y where it is newer than
-# what that names; where it is newer than neither, as a patch whose run comes after a newer patch's,
-# it moves neither, and is published under release-X.Y.Z, which names it and nothing else, since npm
-# publishes nothing without a dist-tag. What each names is asked of the registry, which holds only
-# what was published, so a tag whose run refused it or failed has no say. The dist-tags of a public
+# latest where it is newer than what latest names, and otherwise is published under release-X.Y.Z,
+# which names it and nothing else, since npm publishes nothing without a dist-tag. latest only ever
+# moves to a newer release, so what it names once every run has run is the newest release published,
+# whatever order the runs ran in; a dist-tag for each line of releases would be another thing to
+# keep to that, the newest of its line, which a run publishing one release cannot keep where latest
+# has moved on to another line, and there is none. What latest names is asked of the registry,
+# which holds only what was published, so a tag whose run refused it or failed has no say. The dist-tags of a public
 # package are read without logging in, so the workflow does nothing as the trusted publisher but
 # publish. DIST_TAGS, where it is set, is taken for what the registry says, as JSON, as a dry run
 # sets it.
@@ -127,11 +129,8 @@ if [[ "$ref" == refs/tags/v* ]]; then
     echo "what the registry says of the dist-tags of $name is not an object of them: $tags" >&2
     exit 1
   fi
-  line="release-${version%.*}"
   if newer_than "$version" "$tags" latest; then
     dist_tag=latest
-  elif newer_than "$version" "$tags" "$line"; then
-    dist_tag="$line"
   else
     dist_tag="release-$version"
   fi

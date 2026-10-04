@@ -5,7 +5,7 @@ name: Publish
 # develop by then, as a development version under dev: X.Y.Z-dev with how many commits it holds,
 # the time and the commit, a version npm takes once and never again, and which a range written for
 # releases does not reach. A tag vX.Y.Z on main publishes X.Y.Z, under latest where it is newer than
-# what latest names, and otherwise under a dist-tag of its own line that it does not take back. CI
+# what latest names, and otherwise under a dist-tag that names it alone. CI
 # takes each of these paths as a dry run on every pull request, by scripts/try-publish.sh.
 #
 # npm is handed nothing to log in with: it proves to the registry that it runs in this workflow of
