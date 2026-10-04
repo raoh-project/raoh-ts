@@ -10,18 +10,37 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        # The oldest Node package.json says it runs on, and the current one.
-        node: [22, 24]
+        # The oldest Node package.json says it runs on, read from it, and the current LTS.
+        node: [oldest, lts/*]
     steps:
       - uses: actions/checkout@v4
+      # The engines field and this are one statement, so the oldest is read there, to the patch: a
+      # version written here as well, or one naming only a major, would let the tests pass on a
+      # Node the package does not promise and leave the one it does untried.
+      - name: The Node to run on
+        id: node
+        run: |
+          if [ "${{ matrix.node }}" != oldest ]; then
+            echo "version=${{ matrix.node }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          engines=$(jq -r '.engines.node' package.json)
+          if [[ ! "$engines" =~ ^\>=([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::error::package.json says it runs on Node $engines; write the oldest it runs on as >=X.Y.Z"
+            exit 1
+          fi
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
+          node-version: ${{ steps.node.outputs.version }}
           cache: npm
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
       - run: npm test
+      # What npm packs carries the license and the README beside what tsc wrote.
+      - name: The package carries the license and the README
+        run: npm pack --dry-run --json | jq -e '.[0].files | map(.path) | index("LICENSE") and index("README.md") and index("dist/index.js")'
 
   # The cases of the Raoh Specification at the commit conformance/spec.lock pins, run on this
   # library and checked by that commit's raoh-verify against conformance/conformance.json.

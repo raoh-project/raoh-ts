@@ -20,7 +20,7 @@ where it was, instead of stopping at the first one.
 npm install @raoh/core
 ```
 
-It is an ES module with no dependencies, and runs on Node 22 and later and in current browsers.
+It is an ES module with no dependencies, and runs on Node 22.18.0 and later and in current browsers.
 
 ## Quick start
 
