@@ -13,7 +13,7 @@ import {
   presentWith,
 } from "../src/index.ts";
 import { floatJson, nearestFloat } from "../src/float.ts";
-import { type IssueWire, issueWire } from "../src/wire.ts";
+import { issueWire, wire } from "../src/wire.ts";
 
 /** A type of the value model, as catalog/operations.json writes one. */
 export type Ty =
@@ -133,12 +133,11 @@ function readFloat(json: unknown, width: Width, ty: Ty): number {
   throw wrong(json, ty);
 }
 
-/** A JSON number of exactly the text given. */
-function number(text: string): JsonNumber {
-  return new JsonNumber(text);
-}
-
-/** Writes `value`, a value of `ty`, as its observation, ready for `JSON.stringify`. */
+/**
+ * Writes `value`, a value of `ty`, as its observation, ready for `JSON.stringify`. A scalar is
+ * written as the library writes it; the type says only what a JavaScript value does not, which
+ * float width a number is, and how a structure the library has no JSON of is observed.
+ */
 export function observe(ty: Ty, value: unknown): unknown {
   const mismatch = () => new Error(`${String(value)} is not a value of ${JSON.stringify(ty)}`);
   switch (ty.kind) {
@@ -147,17 +146,17 @@ export function observe(ty: Ty, value: unknown): unknown {
       return value;
     case "int32":
       if (typeof value !== "number" || !Number.isInteger(value)) throw mismatch();
-      return number(String(value));
+      return wire(value);
     case "int64":
       if (typeof value !== "bigint") throw mismatch();
-      return number(value.toString());
+      return wire(value);
     case "float32":
     case "float64":
       if (typeof value !== "number") throw mismatch();
       return floatJson(value, ty.kind === "float32" ? 32 : 64);
     case "decimal":
       if (!(value instanceof Decimal)) throw mismatch();
-      return value.toString();
+      return wire(value);
     case "string":
     case "symbol":
     case "uuid":
@@ -201,20 +200,11 @@ export function observe(ty: Ty, value: unknown): unknown {
 }
 
 /**
- * An issue as a case writes one: the library's own JSON of it, which writes every metadata value
- * as its observation, with the message key under the name the case format gives it. The issues a
- * `one_of_failed` lists are written as raoh-java writes them, with no message key.
+ * An issue as a case writes one: the library's own JSON of it, with the message key under the
+ * name the case format gives it. Nothing else is changed: what the library writes is the
+ * observation the case compares.
  */
 export function writeIssue(issue: Issue): unknown {
-  return caseIssue(issueWire(issue), true);
-}
-
-function caseIssue(written: IssueWire, keyed: boolean): unknown {
-  const { path, code, messageKey, message, meta } = written;
-  const candidates = code === "one_of_failed" ? (meta.candidates as unknown as { candidate: unknown; issues: IssueWire[] }[]) : undefined;
-  const observed =
-    candidates === undefined
-      ? meta
-      : { ...meta, candidates: candidates.map((c) => ({ candidate: c.candidate, issues: c.issues.map((i) => caseIssue(i, false)) })) };
-  return keyed ? { path, code, message_key: messageKey, message, meta: observed } : { path, code, message, meta: observed };
+  const { path, code, messageKey, message, meta } = issueWire(issue);
+  return { path, code, message_key: messageKey, message, meta };
 }

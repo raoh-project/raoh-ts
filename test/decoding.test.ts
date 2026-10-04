@@ -147,8 +147,28 @@ test("writes an issue as JSON whatever its metadata holds, every number as the n
   assert.match(JSON.stringify(negativeZero), /"actual":\{"float":"-0"\}/);
   assert.match(JSON.stringify(float32), /"min":0\.1,/);
   assert.match(JSON.stringify(scaled), /"min":"1\.50"/);
-  assert.match(JSON.stringify(tried), /"candidates":\[\{"candidate":0,"issues":\[\{"path":"","code":"type_mismatch"/);
-  assert.match(JSON.stringify(tried), /"actual":1\}\}\]\}\]/);
+  // The issues a one_of_failed lists are written as the specification observes the issues type:
+  // with no message key, which only the issue that holds them carries.
+  assert.deepEqual(JSON.parse(JSON.stringify(tried)), [
+    {
+      path: "",
+      code: "one_of_failed",
+      messageKey: "one_of_failed",
+      message: "no variant matched",
+      meta: {
+        candidates: [
+          {
+            candidate: 0,
+            issues: [{ path: "", code: "type_mismatch", message: "expected string", meta: { expected: "string", actual: "number" } }],
+          },
+          {
+            candidate: 1,
+            issues: [{ path: "", code: "out_of_range", message: "must be at least 5", meta: { min: 5, actual: 1 } }],
+          },
+        ],
+      },
+    },
+  ]);
   // A number of the input model is written as it was read.
   assert.equal(JSON.stringify(parse("[9007199254740993, 1.50, -0]")), "[9007199254740993,1.50,-0]");
 });

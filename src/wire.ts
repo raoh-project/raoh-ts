@@ -19,13 +19,21 @@ import { ValueSet } from "./set.ts";
 /** A JSON value as this library writes one: every number a JsonNumber of its exact text. */
 export type Wire = null | boolean | string | JsonNumber | readonly Wire[] | { readonly [member: string]: Wire };
 
-/** An issue as JSON. */
-export interface IssueWire {
+/**
+ * An issue held in another's metadata, the candidates of a `one_of_failed`, as the
+ * specification observes the `issues` type: a path, a code, a message and metadata, and no
+ * message key.
+ */
+export interface NestedIssueWire {
   readonly path: string;
   readonly code: string;
-  readonly messageKey: string;
   readonly message: string;
   readonly meta: { readonly [name: string]: Wire };
+}
+
+/** An issue as JSON: a nested issue's parts, and its message key. */
+export interface IssueWire extends NestedIssueWire {
+  readonly messageKey: string;
 }
 
 /**
@@ -33,10 +41,15 @@ export interface IssueWire {
  * `resolver` writes it (or as it was given), and its metadata, each value as its observation.
  */
 export function issueWire(issue: Issue, resolver: MessageResolver = Messages.english): IssueWire {
+  const { path, code, message, meta } = nestedIssueWire(issue, resolver);
+  return { path, code, messageKey: issue.messageKey, message, meta };
+}
+
+/** `issue` as JSON where it is held in another issue's metadata: everything but its message key. */
+export function nestedIssueWire(issue: Issue, resolver: MessageResolver = Messages.english): NestedIssueWire {
   return {
     path: issue.path.toString(),
     code: issue.code,
-    messageKey: issue.messageKey,
     message: issue.message(resolver),
     meta: record(issue.meta, resolver),
   };
@@ -68,7 +81,7 @@ export function wire(value: unknown, resolver: MessageResolver = Messages.englis
     return value.toString();
   }
   if (value instanceof Issues) {
-    return value.list.map((issue) => issueWire(issue, resolver) as unknown as Wire);
+    return value.list.map((issue) => nestedIssueWire(issue, resolver) as unknown as Wire);
   }
   if (Array.isArray(value) || value instanceof ValueSet) {
     return [...value].map((item) => wire(item, resolver));

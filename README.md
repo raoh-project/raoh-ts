@@ -101,7 +101,7 @@ metadata value is written as the Raoh Specification observes it
 | float32, float64 | its canonical decimal as a number (`0.1` for the float32 nearest 0.1, `1.0E7`), or `{"float": "-0"}`, `{"float": "NaN"}`, `{"float": "+Infinity"}`, `{"float": "-Infinity"}` |
 | decimal | a string, at its scale (`"1.50"`, `"1E+3"`) |
 | list | an array |
-| the candidates of `one_of_failed` | an array of `{candidate, issues}` |
+| the candidates of `one_of_failed` | an array of `{candidate, issues}`, each issue `{path, code, message, meta}` with no `messageKey`, as the specification observes the issues type |
 
 No number is rounded on the way out: an int64 beyond 2⁵³ is written with all its digits through
 `JSON.rawJSON`. On an engine that has no `JSON.rawJSON`, a number that a JavaScript number would
