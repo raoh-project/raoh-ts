@@ -20,7 +20,13 @@ where it was, instead of stopping at the first one.
 npm install @raoh/core
 ```
 
-It is an ES module with no dependencies, and runs on Node 22 and later and in current browsers.
+It is an ES module, and runs on Node 22 and later and in current browsers. It depends on
+[`@raoh/199x-notation`](https://github.com/raoh-project/199x-notation), which reads text by the
+rules Raoh and Souther share: the `White_Space` set, Unicode 18.0.0 case mapping and normalization,
+the pattern language and the grammar of dates and times. JavaScript's own `trim`, `toLowerCase`,
+`normalize` and `RegExp` answer by the Unicode version of the engine, so a string read on one
+browser would be read otherwise on another. The tables those rules read are about 80 KB of a bundle,
+gzipped, and come with `string()`, whose operations they are.
 Working on raoh-ts itself takes Node 22.18.0 or later, which runs the tests as the TypeScript they
 are written in; `package.json` says the first in `engines` and the second in `devEngines`.
 
@@ -169,6 +175,15 @@ The values a decoder gives are a `number` for `int`, `float` and `double`, a `bi
 `Decimal` (a coefficient and a scale) for `decimal`, a `ValueSet` for `toSet`, which tells +0 from
 -0 as a JavaScript `Set` does not, and a `Map` for `dict`.
 
+`string().date()`, `.time()`, `.dateTime()`, `.offsetDateTime()` and `.iso8601()` give a
+`LocalDate`, a `LocalTime`, a `LocalDateTime`, an `OffsetDateTime` and an `Instant`, this library's
+own: years run from -999999999 to 999999999, and an instant's seconds are a `bigint`, beyond what a
+JavaScript `Date` holds. `equals` compares every part, and `compare` is the chronology `before`,
+`after` and `between` go by, which for an offset date-time is the instant alone: `09:00Z` and
+`10:00+01:00` are different values and neither is before the other. `toString` and `toJSON` write
+the observation of the specification, and `LocalDate.parse("2024-02-29")` and the others read the
+text a decoder reads, which is the only way one is made.
+
 ## A library built on Raoh
 
 A library whose decoders, issues or paths an application combines with its own, as Souther's
@@ -186,16 +201,8 @@ at the commit `conformance/spec.lock` pins, with the verifier of that commit:
 scripts/conformance.sh
 ```
 
-Raoh Specification 0.9.0-dev — core: partially conformant (314 unsupported); encode: conformant;
-messages-en: conformant; messages-ja: conformant.
-
-The unsupported features are the ones that read text by the rules
-[199x-notation](https://github.com/raoh-project/199x-notation) gives: `trim`, `nonBlank`,
-`toLowerCase`, `toUpperCase`, `normalize`, `pattern`, and the temporal decoders and their
-operations. JavaScript's own `normalize`, case mapping and `RegExp` follow whichever Unicode
-version the engine has, so they are left out until raoh-ts reads text with 199x-notation, rather
-than given with answers that differ from one engine to another. `conformance/conformance.json`
-lists them.
+Raoh Specification 0.9.0-dev — core: conformant; encode: conformant; messages-en: conformant;
+messages-ja: conformant.
 
 ## Releasing
 

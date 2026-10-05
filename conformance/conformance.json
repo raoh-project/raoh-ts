@@ -1,34 +1,12 @@
 {
   "implementation": "raoh-ts",
   "specification": "0.9.0-dev",
-  "profiles": ["core", "encode", "messages-en", "messages-ja"],
-  "unsupported_features": {
-    "operation.string.trim": {"reason": "Reads Unicode 18.0.0 White_Space, which 199x-notation gives and raoh-ts does not use yet"},
-    "operation.string.nonBlank": {"reason": "Reads Unicode 18.0.0 White_Space, which 199x-notation gives and raoh-ts does not use yet"},
-    "operation.string.toLowerCase": {"reason": "Uses the Unicode 18.0.0 case mappings, which 199x-notation gives and raoh-ts does not use yet"},
-    "operation.string.toUpperCase": {"reason": "Uses the Unicode 18.0.0 case mappings, which 199x-notation gives and raoh-ts does not use yet"},
-    "operation.string.normalize": {"reason": "Uses Unicode 18.0.0 normalization, which 199x-notation gives and raoh-ts does not use yet"},
-    "operation.string.pattern": {"reason": "Uses the pattern language, which 199x-notation reads and matches and raoh-ts does not use yet"},
-    "operation.string.date": {"reason": "Reads the temporal grammar, which 199x-notation gives and raoh-ts does not use yet"},
-    "operation.string.time": {"reason": "Reads the temporal grammar, which 199x-notation gives and raoh-ts does not use yet"},
-    "operation.string.dateTime": {"reason": "Reads the temporal grammar, which 199x-notation gives and raoh-ts does not use yet"},
-    "operation.string.offsetDateTime": {"reason": "Reads the temporal grammar, which 199x-notation gives and raoh-ts does not use yet"},
-    "operation.string.iso8601": {"reason": "Reads the temporal grammar, which 199x-notation gives and raoh-ts does not use yet"},
-    "operation.date.before": {"reason": "Operates on dates, which raoh-ts reads once it uses 199x-notation"},
-    "operation.date.after": {"reason": "Operates on dates, which raoh-ts reads once it uses 199x-notation"},
-    "operation.date.between": {"reason": "Operates on dates, which raoh-ts reads once it uses 199x-notation"},
-    "operation.time.before": {"reason": "Operates on times, which raoh-ts reads once it uses 199x-notation"},
-    "operation.time.after": {"reason": "Operates on times, which raoh-ts reads once it uses 199x-notation"},
-    "operation.time.between": {"reason": "Operates on times, which raoh-ts reads once it uses 199x-notation"},
-    "operation.datetime.before": {"reason": "Operates on date-times, which raoh-ts reads once it uses 199x-notation"},
-    "operation.datetime.after": {"reason": "Operates on date-times, which raoh-ts reads once it uses 199x-notation"},
-    "operation.datetime.between": {"reason": "Operates on date-times, which raoh-ts reads once it uses 199x-notation"},
-    "operation.offset_datetime.before": {"reason": "Operates on offset date-times, which raoh-ts reads once it uses 199x-notation"},
-    "operation.offset_datetime.after": {"reason": "Operates on offset date-times, which raoh-ts reads once it uses 199x-notation"},
-    "operation.offset_datetime.between": {"reason": "Operates on offset date-times, which raoh-ts reads once it uses 199x-notation"},
-    "operation.instant.before": {"reason": "Operates on instants, which raoh-ts reads once it uses 199x-notation"},
-    "operation.instant.after": {"reason": "Operates on instants, which raoh-ts reads once it uses 199x-notation"},
-    "operation.instant.between": {"reason": "Operates on instants, which raoh-ts reads once it uses 199x-notation"}
-  },
+  "profiles": [
+    "core",
+    "encode",
+    "messages-en",
+    "messages-ja"
+  ],
+  "unsupported_features": {},
   "divergences": {}
 }
