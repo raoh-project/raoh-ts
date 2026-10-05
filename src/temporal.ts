@@ -2,9 +2,11 @@
 //
 // Which text is one of these is decided by the grammar 199x-notation shares between Raoh and
 // Souther, and the value is built from the fields its reading of the text gives, so the text is
-// read once and by that grammar alone. Years run from -999999999 to 999999999, beyond what
-// JavaScript's `Date` holds, and an instant is counted in seconds that a `number` does not hold
-// exactly, so the types are this library's own.
+// read once and by that grammar alone. A date, a date-time and an offset date-time hold the years
+// from -999999999 to 999999999 in the fields they are written in; an instant holds the moments on
+// the UTC time-line from the first second of year -1000000000 to the last of year 1000000000,
+// counted in seconds a `number` does not hold exactly. That is beyond what JavaScript's `Date`
+// holds, so the types are this library's own.
 //
 // Each is a value: two are the same where `equals` says so, which compares every part. `compare`
 // is the chronology `before`, `after` and `between` compare by, which for an offset date-time is
@@ -27,6 +29,8 @@ const SECONDS_PER_DAY = 86_400n;
 /**
  * What a constructor here is handed by this module and by nobody else: a value is made from what
  * 199x-notation read of a text, which is within the ranges the types hold, and from nothing else.
+ * Each constructor is private, so the types name no way of making one, and asks for this as well,
+ * since a private constructor is still one plain JavaScript can call.
  */
 const MADE: unique symbol = Symbol("made by @raoh/core");
 
@@ -35,6 +39,14 @@ function made(given: symbol, name: string): void {
     throw new TypeError(`a ${name} is read from text, by ${name}.parse or a decoder, and not made`);
   }
 }
+
+// What makes each value, which only this module calls: each class hands its own over in a static
+// block, the one place outside a constructor that can call it.
+let makeDate: (year: number, month: number, day: number) => LocalDate;
+let makeTime: (hour: number, minute: number, second: number, nanosecond: number) => LocalTime;
+let makeDateTime: (date: LocalDate, time: LocalTime) => LocalDateTime;
+let makeOffsetDateTime: (dateTime: LocalDateTime, offsetSeconds: number) => OffsetDateTime;
+let makeInstant: (epochSecond: bigint, nanosecond: number) => Instant;
 
 function order<T>(a: T, b: T): number {
   return a < b ? -1 : a > b ? 1 : 0;
@@ -48,8 +60,11 @@ export class LocalDate {
   /** From 1 to the month's last. */
   readonly day: number;
 
-  /** @hidden A date is read from text, by {@link LocalDate.parse} or a decoder. */
-  constructor(given: typeof MADE, year: number, month: number, day: number) {
+  static {
+    makeDate = (year, month, day) => new LocalDate(MADE, year, month, day);
+  }
+
+  private constructor(given: typeof MADE, year: number, month: number, day: number) {
     made(given, "LocalDate");
     this.year = year;
     this.month = month;
@@ -87,11 +102,6 @@ export class LocalDate {
   toJSON(): string {
     return this.toString();
   }
-
-  /** Days from 1970-01-01. */
-  epochDay(): bigint {
-    return daysFromCivil(BigInt(this.year), this.month, this.day);
-  }
 }
 
 /** A time of day to the nanosecond. */
@@ -105,8 +115,11 @@ export class LocalTime {
   /** From 0 to 999999999. */
   readonly nanosecond: number;
 
-  /** @hidden A time is read from text, by {@link LocalTime.parse} or a decoder. */
-  constructor(given: typeof MADE, hour: number, minute: number, second: number, nanosecond: number) {
+  static {
+    makeTime = (hour, minute, second, nanosecond) => new LocalTime(MADE, hour, minute, second, nanosecond);
+  }
+
+  private constructor(given: typeof MADE, hour: number, minute: number, second: number, nanosecond: number) {
     made(given, "LocalTime");
     this.hour = hour;
     this.minute = minute;
@@ -145,11 +158,6 @@ export class LocalTime {
   toJSON(): string {
     return this.toString();
   }
-
-  /** Seconds from the start of the day. */
-  secondOfDay(): number {
-    return this.hour * 3600 + this.minute * 60 + this.second;
-  }
 }
 
 /** A date and a time of day, with no offset. */
@@ -157,8 +165,11 @@ export class LocalDateTime {
   readonly date: LocalDate;
   readonly time: LocalTime;
 
-  /** @hidden A date-time is read from text, by {@link LocalDateTime.parse} or a decoder. */
-  constructor(given: typeof MADE, date: LocalDate, time: LocalTime) {
+  static {
+    makeDateTime = (date, time) => new LocalDateTime(MADE, date, time);
+  }
+
+  private constructor(given: typeof MADE, date: LocalDate, time: LocalTime) {
     made(given, "LocalDateTime");
     this.date = date;
     this.time = time;
@@ -205,8 +216,11 @@ export class OffsetDateTime {
   /** Seconds east of UTC, from -64800 to 64800. */
   readonly offsetSeconds: number;
 
-  /** @hidden An offset date-time is read from text, by {@link OffsetDateTime.parse} or a decoder. */
-  constructor(given: typeof MADE, dateTime: LocalDateTime, offsetSeconds: number) {
+  static {
+    makeOffsetDateTime = (dateTime, offsetSeconds) => new OffsetDateTime(MADE, dateTime, offsetSeconds);
+  }
+
+  private constructor(given: typeof MADE, dateTime: LocalDateTime, offsetSeconds: number) {
     made(given, "OffsetDateTime");
     this.dateTime = dateTime;
     this.offsetSeconds = offsetSeconds;
@@ -215,7 +229,7 @@ export class OffsetDateTime {
   /** The offset date-time `text` names, as `string().offsetDateTime()` reads it, or `undefined` where it names none. */
   static parse(text: string): OffsetDateTime | undefined {
     const read = readOffsetDateTime(text);
-    return "value" in read ? new OffsetDateTime(MADE, dateTimeOf(read.value.dateTime), read.value.offsetSeconds) : undefined;
+    return "value" in read ? makeOffsetDateTime(dateTimeOf(read.value.dateTime), read.value.offsetSeconds) : undefined;
   }
 
   get [Symbol.toStringTag](): string {
@@ -238,7 +252,9 @@ export class OffsetDateTime {
   }
 
   #epochSecond(): bigint {
-    return this.dateTime.date.epochDay() * SECONDS_PER_DAY + BigInt(this.dateTime.time.secondOfDay() - this.offsetSeconds);
+    const { date, time } = this.dateTime;
+    return daysFromCivil(BigInt(date.year), date.month, date.day) * SECONDS_PER_DAY
+      + BigInt(time.hour * 3600 + time.minute * 60 + time.second - this.offsetSeconds);
   }
 
   /** The date-time, then `Z` for the zero offset and otherwise `±hh:mm`, then `:ss` where the offset's seconds are not zero. */
@@ -256,15 +272,22 @@ export class OffsetDateTime {
   }
 }
 
-/** A point on the UTC time-line to the nanosecond, counted from 1970-01-01T00:00:00Z. */
+/**
+ * A point on the UTC time-line to the nanosecond, counted from 1970-01-01T00:00:00Z: from the first
+ * second of year -1000000000 to the last of year 1000000000, a year further on either side than a
+ * date holds, since an offset and an hour 24 move a moment across the end of a year.
+ */
 export class Instant {
   /** Seconds from 1970-01-01T00:00:00Z to the second at or before the instant. */
   readonly epochSecond: bigint;
   /** Nanoseconds from that second, from 0 to 999999999. */
   readonly nanosecond: number;
 
-  /** @hidden An instant is read from text, by {@link Instant.parse} or a decoder. */
-  constructor(given: typeof MADE, epochSecond: bigint, nanosecond: number) {
+  static {
+    makeInstant = (epochSecond, nanosecond) => new Instant(MADE, epochSecond, nanosecond);
+  }
+
+  private constructor(given: typeof MADE, epochSecond: bigint, nanosecond: number) {
     made(given, "Instant");
     this.epochSecond = epochSecond;
     this.nanosecond = nanosecond;
@@ -273,7 +296,7 @@ export class Instant {
   /** The instant `text` names, as `string().iso8601()` reads it, or `undefined` where it names none. */
   static parse(text: string): Instant | undefined {
     const read = readInstant(text);
-    return "value" in read ? new Instant(MADE, read.value.epochSecond, read.value.nanosecond) : undefined;
+    return "value" in read ? makeInstant(read.value.epochSecond, read.value.nanosecond) : undefined;
   }
 
   get [Symbol.toStringTag](): string {
@@ -308,16 +331,16 @@ export class Instant {
 export type Temporal = LocalDate | LocalTime | LocalDateTime | OffsetDateTime | Instant;
 
 function dateOf(read: TemporalDate): LocalDate {
-  return new LocalDate(MADE, read.year, read.month, read.day);
+  return makeDate(read.year, read.month, read.day);
 }
 
 /** A fraction written as `.000` and none are the same time of day. */
 function timeOf(read: TemporalTime): LocalTime {
-  return new LocalTime(MADE, read.hour, read.minute, read.second, read.nanosecond ?? 0);
+  return makeTime(read.hour, read.minute, read.second, read.nanosecond ?? 0);
 }
 
 function dateTimeOf(read: { readonly date: TemporalDate; readonly time: TemporalTime }): LocalDateTime {
-  return new LocalDateTime(MADE, dateOf(read.date), timeOf(read.time));
+  return makeDateTime(dateOf(read.date), timeOf(read.time));
 }
 
 function two(n: number): string {

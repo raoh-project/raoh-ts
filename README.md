@@ -177,8 +177,11 @@ The values a decoder gives are a `number` for `int`, `float` and `double`, a `bi
 
 `string().date()`, `.time()`, `.dateTime()`, `.offsetDateTime()` and `.iso8601()` give a
 `LocalDate`, a `LocalTime`, a `LocalDateTime`, an `OffsetDateTime` and an `Instant`, this library's
-own: years run from -999999999 to 999999999, and an instant's seconds are a `bigint`, beyond what a
-JavaScript `Date` holds. `equals` compares every part, and `compare` is the chronology `before`,
+own. A date, a date-time and an offset date-time hold the years from -999999999 to 999999999 in the
+fields they are written in. An instant holds the moments on the UTC time-line from the first second
+of year -1000000000 to the last of year 1000000000, a year further on either side, since an offset
+and an hour 24 move a moment across the end of a year; its seconds are a `bigint`. Both are beyond
+what a JavaScript `Date` holds. `equals` compares every part, and `compare` is the chronology `before`,
 `after` and `between` go by, which for an offset date-time is the instant alone: `09:00Z` and
 `10:00+01:00` are different values and neither is before the other. `toString` and `toJSON` write
 the observation of the specification, and `LocalDate.parse("2024-02-29")` and the others read the

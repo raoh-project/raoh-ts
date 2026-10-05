@@ -403,3 +403,16 @@ test("tells an offset date-time's sameness from its chronology", () => {
     [{ after: "2024-01-01T00:00", actual: "2023-12-31T23:59" }]);
   assert.equal(Instant.parse("1970-01-01T00:00:00Z")?.epochSecond, 0n);
 });
+
+// What each temporal value offers is its fields, parse, equals, compare, toString and toJSON, and
+// nothing a later change to how it is held would have to keep.
+test("offers of each temporal value what it is, and nothing of how it is held", () => {
+  const surface = (type: { prototype: object }) => Object.getOwnPropertyNames(type.prototype).sort();
+  for (const type of [LocalDate, LocalTime, LocalDateTime, OffsetDateTime, Instant]) {
+    assert.deepEqual(surface(type), ["compare", "constructor", "equals", "toJSON", "toString"], type.name);
+    assert.deepEqual(Object.getOwnPropertyNames(type).filter((name) => !["length", "name", "prototype"].includes(name)),
+      ["parse"], type.name);
+  }
+  // A temporal value is read from text, and a constructor plain JavaScript calls still makes none.
+  assert.throws(() => new (Instant as unknown as new (...a: unknown[]) => Instant)(0n, 0), TypeError);
+});
