@@ -18,6 +18,7 @@ export {
   IntDecoder,
   LongDecoder,
   StringDecoder,
+  TemporalDecoder,
   bool,
   decimal,
   double,
@@ -27,6 +28,7 @@ export {
   string,
 } from "./scalars.ts";
 export { ValueSet } from "./set.ts";
+export { Instant, LocalDate, LocalDateTime, LocalTime, OffsetDateTime, type Temporal } from "./temporal.ts";
 export { type IssueWire, issueWire, type Wire } from "./wire.ts";
 export {
   ABSENT,

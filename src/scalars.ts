@@ -6,6 +6,8 @@ import { Float, type Width, nearestFloat } from "./float.ts";
 import { kindOf, lexemeOf } from "./input.ts";
 import { Issue, type Result, failed, ok } from "./issue.ts";
 import { compareValues, includesSame } from "./meta.ts";
+import { type Form, isWhiteSpace, lowercase, normalize, readPattern, uppercase } from "@raoh/199x-notation";
+import { Instant, LocalDate, LocalDateTime, LocalTime, OffsetDateTime, type Temporal } from "./temporal.ts";
 import { isCuid, isEmail, isIpv4, isIpv6, isUlid, isUuid, uriParts } from "./text.ts";
 
 const REQUIRED = new Issue("required");
@@ -229,9 +231,153 @@ export class StringDecoder extends Chain<string> {
     );
   }
 
+  /** The string without the characters with the Unicode 18.0.0 `White_Space` property at either end. */
+  trim(): this {
+    return this.#map(trimmed);
+  }
+
+  /** Gives `blank` where the string is empty or holds only characters with the `White_Space` property. */
+  nonBlank(message?: string): this {
+    return this.check((s) => (trimmed(s) === "" ? new Issue("blank") : undefined), message);
+  }
+
+  /** The string in lower case, by Unicode 18.0.0's default full mapping, `Final_Sigma` included. */
+  toLowerCase(): this {
+    return this.#map(lowercase);
+  }
+
+  /** The string in upper case, by Unicode 18.0.0's default full mapping: `ß` becomes `SS`. */
+  toUpperCase(): this {
+    return this.#map(uppercase);
+  }
+
+  /** The string in the Unicode 18.0.0 normalization form `form`, NFC where none is given. */
+  normalize(form: Form = "NFC"): this {
+    if (form !== "NFC" && form !== "NFD" && form !== "NFKC" && form !== "NFKD") {
+      throw new RangeError(`${String(form)} is none of the normalization forms`);
+    }
+    return this.#map((s) => normalize(form, s));
+  }
+
+  /**
+   * Gives `invalid_format`, with the pattern as written, unless the whole string is one of the
+   * strings `regex` denotes, in the pattern language of spec/pattern.md. A `regex` that is no
+   * pattern of the language is a mistake in the program and throws a `SyntaxError`, and one past a
+   * limit of the language a `RangeError`, when the decoder is made.
+   */
+  pattern(regex: string, message?: string): this {
+    const read = readPattern(regex);
+    if ("refused" in read) {
+      throw new SyntaxError(`${JSON.stringify(regex)} is no pattern: ${read.refused.why} at ${read.refused.from}`);
+    }
+    if ("beyond" in read) {
+      throw new RangeError(`${JSON.stringify(regex)} is past the limit of ${read.beyond.limit}`);
+    }
+    const pattern = read.pattern;
+    return this.check(
+      (s) => (pattern.matches(s) ? undefined : new Issue("invalid_format", { meta: { pattern: regex } })),
+      message,
+    );
+  }
+
+  /** Reads a date, `yyyy-mm-dd`, as spec/decoder-language's `date` does; anything else gives `invalid_format.date`. */
+  date(message?: string): TemporalDecoder<LocalDate> {
+    return this.#temporal(LocalDate.parse, "date", message);
+  }
+
+  /** Reads a time of day, `hh:mm`, `hh:mm:ss` or with a fraction of a second; anything else gives `invalid_format.time`. */
+  time(message?: string): TemporalDecoder<LocalTime> {
+    return this.#temporal(LocalTime.parse, "time", message);
+  }
+
+  /** Reads a date-time, a date, `T` and a time; anything else gives `invalid_format.date_time`. */
+  dateTime(message?: string): TemporalDecoder<LocalDateTime> {
+    return this.#temporal(LocalDateTime.parse, "date_time", message);
+  }
+
+  /** Reads a date-time with an offset, which is kept and not applied; anything else gives `invalid_format.offset_date_time`. */
+  offsetDateTime(message?: string): TemporalDecoder<OffsetDateTime> {
+    return this.#temporal(OffsetDateTime.parse, "offset_date_time", message);
+  }
+
+  /** Reads an instant: a date-time with its seconds and an offset, which is applied; anything else, a leap second included, gives `invalid_format.instant`. */
+  iso8601(message?: string): TemporalDecoder<Instant> {
+    return this.#temporal(Instant.parse, "instant", message);
+  }
+
+  #temporal<T extends Temporal>(parse: (text: string) => T | undefined, kind: string, message: string | undefined):
+    TemporalDecoder<T> {
+    return new TemporalDecoder(this.convert((s) => {
+      const value = parse(s);
+      return value === undefined ? failed(format(kind)) : ok(value);
+    }, message));
+  }
+
+  /** This decoder, its string then made into what `f` makes of it. */
+  #map(f: (s: string) => string): this {
+    return this.derive(this.convert((s) => ok(f(s))));
+  }
+
   #format(test: (s: string) => boolean, kind: string, meta: Record<string, unknown>, message: string | undefined): this {
     return this.check((s) => (test(s) ? undefined : format(kind, meta)), message);
   }
+}
+
+/** `s` without the characters with the `White_Space` property at either end, read a code point at a time. */
+function trimmed(s: string): string {
+  let start = 0;
+  let end = s.length;
+  while (start < end) {
+    const cp = s.codePointAt(start) as number;
+    if (!isWhiteSpace(cp)) {
+      break;
+    }
+    start += cp > 0xffff ? 2 : 1;
+  }
+  while (end > start) {
+    const low = s.charCodeAt(end - 1);
+    const at = low >= 0xdc00 && low <= 0xdfff && end - 2 >= start ? end - 2 : end - 1;
+    if (!isWhiteSpace(s.codePointAt(at) as number)) {
+      break;
+    }
+    end = at;
+  }
+  return s.slice(start, end);
+}
+
+/**
+ * A decoder of a temporal value, with the operations that compare it chronologically: an offset
+ * date-time by the instant it names, so `09:00Z` is neither before nor after `10:00+01:00`.
+ */
+export class TemporalDecoder<T extends Temporal> extends Chain<T> {
+  /** Gives `out_of_range.before` unless the value is strictly before `bound`. */
+  before(bound: T, message?: string): this {
+    return this.check((value) => (chronology(value, bound) < 0 ? undefined : outOfRange("before", { before: bound, actual: value })), message);
+  }
+
+  /** Gives `out_of_range.after` unless the value is strictly after `bound`. */
+  after(bound: T, message?: string): this {
+    return this.check((value) => (chronology(value, bound) > 0 ? undefined : outOfRange("after", { after: bound, actual: value })), message);
+  }
+
+  /**
+   * Gives `out_of_range.between` unless `from` <= the value <= `to`. A `from` after `to` is a
+   * mistake in the program and throws a `RangeError` when the decoder is made.
+   */
+  between(from: T, to: T, message?: string): this {
+    if (chronology(from, to) > 0) {
+      throw new RangeError(`the start of a period, ${String(from)}, is after its end, ${String(to)}`);
+    }
+    return this.check(
+      (value) => (chronology(value, from) >= 0 && chronology(value, to) <= 0 ? undefined : outOfRange("between", { from, to, actual: value })),
+      message,
+    );
+  }
+}
+
+/** -1, 0 or 1 as `a` comes before, at or after `b`; both are of one temporal type. */
+function chronology<T extends Temporal>(a: T, b: T): number {
+  return (a as { compare(other: T): number }).compare(b);
 }
 
 function format(kind: string, meta: Record<string, unknown> = {}): Issue {
