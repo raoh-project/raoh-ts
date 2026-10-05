@@ -34,15 +34,22 @@ export class Issue {
   readonly givenMessage: string | undefined;
 
   constructor(code: string, init: IssueInit = {}) {
+    for (const [name, text] of [["code", code], ["messageKey", init.messageKey ?? code], ["message", init.message ?? ""]]) {
+      if (typeof text !== "string") {
+        throw new TypeError(`an issue's ${name} is a string, not ${String(text)}`);
+      }
+    }
     this.code = code;
     this.messageKey = init.messageKey ?? code;
-    this.meta = Object.freeze({ ...init.meta });
+    this.meta = frozen({ ...init.meta }) as Readonly<Record<string, unknown>>;
     this.givenMessage = init.message;
     this.path = init.path === undefined
       ? Path.ROOT
       : ofThisCopy(init.path, Path, "Path")
         ? init.path
         : Path.of(...(init.path as readonly (string | number)[]));
+    // What an issue says is fixed when it is made: readonly holds only in TypeScript.
+    Object.freeze(this);
   }
 
   get [Symbol.toStringTag](): string {
@@ -90,6 +97,11 @@ export class Issues implements Iterable<Issue> {
   constructor(issues: readonly Issue[]) {
     if (issues.length === 0) {
       throw new RangeError("a failure has at least one issue");
+    }
+    for (const issue of issues) {
+      if (!ofThisCopy(issue, Issue, "Issue")) {
+        throw new TypeError(`${String(issue)} is not an issue`);
+      }
     }
     this.#list = Object.freeze([...issues]);
   }
@@ -174,4 +186,19 @@ export function failed(issues: Issues | Issue | readonly Issue[]): Failed {
     return { issues };
   }
   return { issues: new Issues(ofThisCopy(issues, Issue, "Issue") ? [issues] : (issues as readonly Issue[])) };
+}
+
+/**
+ * `value` with every array and plain object in it copied and frozen: what an issue's metadata holds
+ * is fixed with the issue, and what the caller handed over is left as it was. A value of a class is
+ * kept as it is, as it keeps itself.
+ */
+function frozen(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return Object.freeze(value.map(frozen));
+  }
+  if (typeof value === "object" && value !== null && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.freeze(Object.fromEntries(Object.entries(value).map(([name, each]) => [name, frozen(each)])));
+  }
+  return value;
 }

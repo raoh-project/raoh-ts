@@ -30,7 +30,8 @@ const SECONDS_PER_DAY = 86_400n;
  * What a constructor here is handed by this module and by nobody else: a value is made from what
  * 199x-notation read of a text, which is within the ranges the types hold, and from nothing else.
  * Each constructor is private, so the types name no way of making one, and asks for this as well,
- * since a private constructor is still one plain JavaScript can call.
+ * since a private constructor is still one plain JavaScript can call; and each value is frozen once
+ * made, since readonly fields are still ones plain JavaScript can write.
  */
 const MADE: unique symbol = Symbol("made by @raoh/core");
 
@@ -69,6 +70,7 @@ export class LocalDate {
     this.year = year;
     this.month = month;
     this.day = day;
+    Object.freeze(this);
   }
 
   /** The date `text` names, as `string().date()` reads it, or `undefined` where it names none. */
@@ -125,6 +127,7 @@ export class LocalTime {
     this.minute = minute;
     this.second = second;
     this.nanosecond = nanosecond;
+    Object.freeze(this);
   }
 
   /** The time `text` names, as `string().time()` reads it, or `undefined` where it names none. */
@@ -173,6 +176,7 @@ export class LocalDateTime {
     made(given, "LocalDateTime");
     this.date = date;
     this.time = time;
+    Object.freeze(this);
   }
 
   /** The date-time `text` names, as `string().dateTime()` reads it, or `undefined` where it names none. */
@@ -224,6 +228,7 @@ export class OffsetDateTime {
     made(given, "OffsetDateTime");
     this.dateTime = dateTime;
     this.offsetSeconds = offsetSeconds;
+    Object.freeze(this);
   }
 
   /** The offset date-time `text` names, as `string().offsetDateTime()` reads it, or `undefined` where it names none. */
@@ -291,6 +296,7 @@ export class Instant {
     made(given, "Instant");
     this.epochSecond = epochSecond;
     this.nanosecond = nanosecond;
+    Object.freeze(this);
   }
 
   /** The instant `text` names, as `string().iso8601()` reads it, or `undefined` where it names none. */

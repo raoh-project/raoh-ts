@@ -8,12 +8,15 @@ import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import {
   Decimal,
+  Float,
   Instant,
   LocalDate,
   LocalDateTime,
   LocalTime,
   OffsetDateTime,
   Issue,
+  Issues,
+  JsonNumber,
   Messages,
   Path,
   ValueSet,
@@ -415,4 +418,40 @@ test("offers of each temporal value what it is, and nothing of how it is held", 
   }
   // A temporal value is read from text, and a constructor plain JavaScript calls still makes none.
   assert.throws(() => new (Instant as unknown as new (...a: unknown[]) => Instant)(0n, 0), TypeError);
+});
+
+// A value is fixed once made: readonly and private hold only in TypeScript, and a value a decoder
+// compares against or an issue reports is one no one holding it can make another.
+test("holds every value it makes to what it was made as, whatever plain JavaScript writes", () => {
+  const values: object[] = [
+    LocalDate.parse("2024-01-01")!, LocalTime.parse("09:00")!, LocalDateTime.parse("2024-01-01T09:00")!,
+    OffsetDateTime.parse("2024-01-01T09:00Z")!, Instant.parse("2024-01-01T09:00:00Z")!,
+    Decimal.parse("1.50")!, new Float(1.5, 32), new JsonNumber("1.50"), new Issue("required"),
+  ];
+  for (const value of values) {
+    assert.ok(Object.isFrozen(value), Object.prototype.toString.call(value));
+    const name = Object.keys(value)[0] as string;
+    assert.throws(() => {
+      (value as Record<string, unknown>)[name] = 13;
+    }, TypeError, Object.prototype.toString.call(value));
+  }
+  const bound = LocalDate.parse("2024-12-31")!;
+  assert.throws(() => {
+    (bound as { month: number }).month = 99;
+  }, TypeError);
+  assert.equal(bound.toString(), "2024-12-31");
+  // What an issue's metadata holds is fixed with it, and what the caller handed over is not frozen.
+  const allowed = ["a", "b"];
+  const issue = new Issue("not_allowed", { meta: { allowed } });
+  assert.throws(() => (issue.meta.allowed as string[]).push("c"), TypeError);
+  allowed.push("c");
+  assert.deepEqual(issue.meta.allowed, ["a", "b"]);
+});
+
+test("refuses, when it is made, a value its type does not hold", () => {
+  assert.throws(() => new Float(1, 16 as never), RangeError);
+  assert.throws(() => new Decimal(1 as never, 0), TypeError);
+  assert.throws(() => new JsonNumber(1 as never), SyntaxError);
+  assert.throws(() => new Issue(1 as never), TypeError);
+  assert.throws(() => new Issues([{ code: "required" } as never]), TypeError);
 });
