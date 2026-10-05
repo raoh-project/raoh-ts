@@ -7,7 +7,13 @@
     "type": "git",
     "url": "git+https://github.com/raoh-project/raoh-ts.git"
   },
-  "keywords": ["decoder", "validation", "json", "parse", "domain"],
+  "keywords": [
+    "decoder",
+    "validation",
+    "json",
+    "parse",
+    "domain"
+  ],
   "type": "module",
   "exports": {
     ".": {
@@ -44,5 +50,8 @@
   "devDependencies": {
     "@types/node": "^22.20.5",
     "typescript": "^5.9.0"
+  },
+  "dependencies": {
+    "@raoh/199x-notation": "0.2.0-dev.251.20261004233409.g3b45e01be6e1"
   }
 }

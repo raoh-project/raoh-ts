@@ -16,10 +16,12 @@ export class JsonNumber {
   readonly lexeme: string;
 
   constructor(lexeme: string) {
-    if (!LEXEME.test(lexeme)) {
+    if (typeof lexeme !== "string" || !LEXEME.test(lexeme)) {
       throw new SyntaxError(`${JSON.stringify(lexeme)} is not a JSON number`);
     }
     this.lexeme = lexeme;
+    // The lexeme was read as a number once, and no one holding it can make it another text.
+    Object.freeze(this);
   }
 
   get [Symbol.toStringTag](): string {

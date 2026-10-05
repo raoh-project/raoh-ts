@@ -13,6 +13,7 @@ import {
   ListDecoder,
   LongDecoder,
   StringDecoder,
+  TemporalDecoder,
   bool,
   decimal,
   dict,
@@ -36,7 +37,7 @@ import {
   string,
 } from "../src/index.ts";
 import { even, issueCountPlus10, mapFixture, notEven, orderedPeriod } from "./fixtures.ts";
-import { T, type Ty, Unbound, read } from "./value.ts";
+import { T, type Ty, read } from "./value.ts";
 
 /** An argument of a form, as catalog/operations.json declares it. */
 interface ArgDef {
@@ -372,13 +373,28 @@ export class Binder {
 /** An operation on a decoder of a scalar, a list or a map. */
 function typed(built: Built, name: string, args: unknown[], message: string | undefined): Built {
   const { decoder, ty } = built;
-  const arg = (i: number, t: Ty) => read(t, args[i]);
+  // An argument left out is optional, which the operation's default stands for: #split has held
+  // the form to the arguments it requires.
+  const arg = (i: number, t: Ty) => (args[i] === undefined ? undefined : read(t, args[i]));
   const no = () => new Error(`no operation ${name} on ${JSON.stringify(ty)}`);
   if (decoder instanceof StringDecoder) {
     return stringOperation(decoder, name, arg, message, no);
   }
   if (decoder instanceof BoundedDecoder) {
     return { decoder: bounded(decoder, ty, name, arg, message, no), ty };
+  }
+  if (decoder instanceof TemporalDecoder) {
+    const temporal = decoder as TemporalDecoder<never>;
+    switch (name) {
+      case "before":
+        return { decoder: temporal.before(arg(0, ty) as never, message), ty };
+      case "after":
+        return { decoder: temporal.after(arg(0, ty) as never, message), ty };
+      case "between":
+        return { decoder: temporal.between(arg(0, ty) as never, arg(1, ty) as never, message), ty };
+      default:
+        throw no();
+    }
   }
   if (decoder instanceof BoolDecoder) {
     if (name !== "isTrue") throw no();
@@ -426,21 +442,6 @@ function typed(built: Built, name: string, args: unknown[], message: string | un
   throw no();
 }
 
-/** The operations of strings that need the text rules of 199x-notation, which raoh-ts does not bind yet. */
-const NOTATION = new Set([
-  "trim",
-  "toLowerCase",
-  "toUpperCase",
-  "normalize",
-  "nonBlank",
-  "pattern",
-  "iso8601",
-  "date",
-  "time",
-  "dateTime",
-  "offsetDateTime",
-]);
-
 function stringOperation(
   d: StringDecoder,
   name: string,
@@ -449,10 +450,29 @@ function stringOperation(
   no: () => Error,
 ): Built {
   const s = (decoder: Decoder<unknown>) => ({ decoder, ty: T.string });
-  if (NOTATION.has(name)) {
-    throw new Unbound(`operation.string.${name}`);
-  }
   switch (name) {
+    case "trim":
+      return s(d.trim());
+    case "nonBlank":
+      return s(d.nonBlank(message));
+    case "toLowerCase":
+      return s(d.toLowerCase());
+    case "toUpperCase":
+      return s(d.toUpperCase());
+    case "normalize":
+      return s(d.normalize(arg(0, T.string) as "NFC" | undefined));
+    case "pattern":
+      return s(d.pattern(arg(0, T.string) as string, message));
+    case "date":
+      return { decoder: d.date(message), ty: { kind: "date" } };
+    case "time":
+      return { decoder: d.time(message), ty: { kind: "time" } };
+    case "dateTime":
+      return { decoder: d.dateTime(message), ty: { kind: "datetime" } };
+    case "offsetDateTime":
+      return { decoder: d.offsetDateTime(message), ty: { kind: "offset_datetime" } };
+    case "iso8601":
+      return { decoder: d.iso8601(message), ty: { kind: "instant" } };
     case "minLength":
       return s(d.minLength(arg(0, T.int32) as number, message));
     case "maxLength":

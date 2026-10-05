@@ -19,11 +19,16 @@ export class Decimal {
   readonly scale: number;
 
   constructor(coefficient: bigint, scale: number) {
+    if (typeof coefficient !== "bigint") {
+      throw new TypeError(`a decimal's coefficient is a bigint, not ${String(coefficient)}`);
+    }
     if (!Number.isInteger(scale) || scale < INT32_MIN || scale > INT32_MAX) {
       throw new RangeError(`a decimal's scale is an int32, not ${scale}`);
     }
     this.coefficient = coefficient;
     this.scale = scale;
+    // A value, so that no one holding it can make it another: readonly holds only in TypeScript.
+    Object.freeze(this);
   }
 
   /**

@@ -33,7 +33,8 @@ operation.any.map operation.any.refine operation.any.flatMap
 const OPERATIONS: Record<string, string> = {
   string:
     "minLength maxLength fixedLength oneOf startsWith endsWith includes email ipv4 ipv6 ip ulid cuid uuid url uri " +
-    "toInt toLong toDecimal toBool",
+    "toInt toLong toDecimal toBool trim nonBlank toLowerCase toUpperCase normalize pattern date time dateTime " +
+    "offsetDateTime iso8601",
   int32: "min max range positive negative nonNegative nonPositive oneOf multipleOf",
   int64: "min max range positive negative nonNegative nonPositive oneOf multipleOf",
   float32: "min max range positive negative nonNegative nonPositive oneOf",
@@ -42,6 +43,11 @@ const OPERATIONS: Record<string, string> = {
   bool: "isTrue",
   list: "nonempty minSize maxSize fixedSize unique contains containsAll toSet",
   map: "nonempty minSize maxSize fixedSize",
+  date: "before after between",
+  time: "before after between",
+  datetime: "before after between",
+  offset_datetime: "before after between",
+  instant: "before after between",
 };
 
 function binds(): Set<string> {

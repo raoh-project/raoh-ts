@@ -4,9 +4,14 @@
 import {
   ABSENT,
   Decimal,
+  Instant,
   type Issue,
   JsonNumber,
+  LocalDate,
+  LocalDateTime,
+  LocalTime,
   NULL,
+  OffsetDateTime,
   type Presence,
   ValueSet,
   type Width,
@@ -85,8 +90,11 @@ export function read(ty: Ty, json: unknown): unknown {
     case "time":
     case "datetime":
     case "offset_datetime":
-    case "instant":
-      throw new Unbound(`a ${ty.kind} value`);
+    case "instant": {
+      const value = typeof json === "string" ? TEMPORALS[ty.kind].parse(json) : undefined;
+      if (value === undefined) throw wrong(json, ty);
+      return value;
+    }
     case "list":
       if (!Array.isArray(json)) throw wrong(json, ty);
       return json.map((item) => read(ty.of, item));
@@ -110,6 +118,15 @@ export function read(ty: Ty, json: unknown): unknown {
       return json === null ? null : read(ty.of, json);
   }
 }
+
+/** The class of each temporal type, whose `parse` reads its observation and whose `toString` writes it. */
+const TEMPORALS = {
+  date: LocalDate,
+  time: LocalTime,
+  datetime: LocalDateTime,
+  offset_datetime: OffsetDateTime,
+  instant: Instant,
+} as const;
 
 /** A float written as a JSON number, rounded to the width once, or as a tag. */
 function readFloat(json: unknown, width: Width, ty: Ty): number {
@@ -168,7 +185,8 @@ export function observe(ty: Ty, value: unknown): unknown {
     case "datetime":
     case "offset_datetime":
     case "instant":
-      throw new Unbound(`a ${ty.kind} value`);
+      if (!(value instanceof TEMPORALS[ty.kind])) throw mismatch();
+      return String(value);
     case "list":
       if (!Array.isArray(value)) throw mismatch();
       return value.map((item) => observe(ty.of, item));

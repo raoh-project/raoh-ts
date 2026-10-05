@@ -2,14 +2,21 @@
 // a decoder gives, and the API a caller writes against.
 
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test } from "node:test";
 import {
   Decimal,
+  Float,
+  Instant,
+  LocalDate,
+  LocalDateTime,
+  LocalTime,
+  OffsetDateTime,
   Issue,
+  Issues,
+  JsonNumber,
   Messages,
   Path,
   ValueSet,
@@ -251,8 +258,12 @@ test("writes what a fallback says of an issue no catalogue has a template for, i
 });
 
 test("refuses a value another copy of the library made, where it would otherwise be misread", async () => {
-  // The sources copied somewhere else are another copy, as one a library brings with it would be.
-  const elsewhere = mkdtempSync(join(tmpdir(), "raoh-copy-"));
+  // The sources copied somewhere else are another copy, as one a library brings with it would be,
+  // and it finds its own dependencies where an installed copy would, in a node_modules above it:
+  // under target/, which nothing keeps.
+  const copies = join(import.meta.dirname, "..", "target", "copies");
+  mkdirSync(copies, { recursive: true });
+  const elsewhere = mkdtempSync(join(copies, "raoh-copy-"));
   cpSync(join(import.meta.dirname, "..", "src"), elsewhere, { recursive: true });
   // A copy is a package of its own, whose package.json says its JavaScript is ES modules.
   writeFileSync(join(elsewhere, "package.json"), JSON.stringify({ type: "module" }));
@@ -337,4 +348,110 @@ test("reads a Decimal as the number it is, at its scale", () => {
   // What stringify writes of a Decimal, parse reads back as that Decimal.
   const [back] = parse(stringify([Decimal.parse("-0.10")])) as unknown[];
   assert.equal(decimal().decode(back).value?.toString(), "-0.10");
+});
+
+test("reads text by 199x-notation's rules, whatever the engine's Unicode", () => {
+  // U+0085 is White_Space and U+FEFF is not, where String.prototype.trim says the opposite of each.
+  assert.equal(string().trim().decode("\u0085 a \u3000").value, "a");
+  assert.equal(string().trim().decode("\uFEFFa").value, "\uFEFFa");
+  assert.deepEqual(string().nonBlank().decode("\u2028 ").issues?.list.map((issue) => issue.code), ["blank"]);
+  assert.equal(string().toLowerCase().decode("ΟΔΥΣΣΕΥΣ").value, "οδυσσευς");
+  assert.equal(string().toUpperCase().decode("straße").value, "STRASSE");
+  assert.equal(string().normalize().decode("e\u0301").value, "\u00E9");
+  assert.equal(string().normalize("NFKD").decode("\uFB01").value, "fi");
+  const code = string().pattern("[A-Z]{3}-[0-9]{4}");
+  assert.equal(code.decode("ABC-1234").value, "ABC-1234");
+  assert.deepEqual(code.decode("ABC-12345").issues?.list.map((issue) => [issue.messageKey, issue.meta.pattern]),
+    [["invalid_format", "[A-Z]{3}-[0-9]{4}"]]);
+});
+
+test("refuses, when it is made, a decoder no value could be read by", () => {
+  assert.throws(() => string().pattern("(?=a)"), SyntaxError);
+  assert.throws(() => string().pattern("a{134217728}"), RangeError);
+  assert.throws(() => string().normalize("NFX" as never), RangeError);
+  const later = LocalDate.parse("2024-12-31")!;
+  const earlier = LocalDate.parse("2024-01-01")!;
+  assert.throws(() => string().date().between(later, earlier), RangeError);
+  // A temporal value is read from text, and not made from fields that may name no day.
+  assert.throws(() => new (LocalDate as unknown as new (...a: unknown[]) => LocalDate)(Symbol("made"), 2024, 13, 1), TypeError);
+});
+
+test("reads dates, times and instants, and writes them as their observations", () => {
+  assert.equal(string().date().decode("+10000-01-01").value?.toString(), "+10000-01-01");
+  assert.equal(string().time().decode("10:30:00").value?.toString(), "10:30");
+  assert.equal(string().time().decode("10:30:45.1").value?.toString(), "10:30:45.100");
+  assert.equal(string().dateTime().decode("2024-02-29T00:00:00.000000001").value?.toString(), "2024-02-29T00:00:00.000000001");
+  assert.equal(string().offsetDateTime().decode("2024-01-15T10:30-00:00").value?.toString(), "2024-01-15T10:30Z");
+  assert.equal(string().offsetDateTime().decode("2024-01-15T10:30:00+05:30:15").value?.toString(), "2024-01-15T10:30+05:30:15");
+  assert.equal(string().iso8601().decode("2026-09-30T24:00:00+09:00").value?.toString(), "2026-09-30T15:00:00Z");
+  assert.equal(string().iso8601().decode("+1000000000-12-31T23:59:59.999999999Z").value?.toString(),
+    "+1000000000-12-31T23:59:59.999999999Z");
+  assert.equal(string().iso8601().decode("-1000000000-01-01T00:00:00Z").value?.toString(), "-1000000000-01-01T00:00:00Z");
+  assert.deepEqual(string().iso8601().decode("2016-12-31T23:59:60Z").issues?.list.map((issue) => issue.messageKey),
+    ["invalid_format.instant"]);
+  assert.equal(JSON.stringify({ at: LocalTime.parse("09:00:00") }), '{"at":"09:00"}');
+});
+
+test("tells an offset date-time's sameness from its chronology", () => {
+  const nine = OffsetDateTime.parse("2024-01-01T09:00Z")!;
+  const ten = OffsetDateTime.parse("2024-01-01T10:00+01:00")!;
+  assert.equal(nine.equals(ten), false);
+  assert.equal(nine.compare(ten), 0);
+  // Neither is before the other, so a bound at one refuses the other on both sides.
+  assert.equal(string().offsetDateTime().before(ten).decode("2024-01-01T09:00Z").issues?.list[0]?.messageKey, "out_of_range.before");
+  assert.equal(string().offsetDateTime().after(ten).decode("2024-01-01T09:00Z").issues?.list[0]?.messageKey, "out_of_range.after");
+  assert.ok(string().offsetDateTime().between(ten, ten).decode("2024-01-01T09:00Z").issues === undefined);
+  const read = string().dateTime().after(LocalDateTime.parse("2024-01-01T00:00")!).decode("2023-12-31T23:59");
+  assert.deepEqual(read.issues?.toJSON().map((issue) => issue.meta),
+    [{ after: "2024-01-01T00:00", actual: "2023-12-31T23:59" }]);
+  assert.equal(Instant.parse("1970-01-01T00:00:00Z")?.epochSecond, 0n);
+});
+
+// What each temporal value offers is its fields, parse, equals, compare, toString and toJSON, and
+// nothing a later change to how it is held would have to keep.
+test("offers of each temporal value what it is, and nothing of how it is held", () => {
+  const surface = (type: { prototype: object }) => Object.getOwnPropertyNames(type.prototype).sort();
+  for (const type of [LocalDate, LocalTime, LocalDateTime, OffsetDateTime, Instant]) {
+    assert.deepEqual(surface(type), ["compare", "constructor", "equals", "toJSON", "toString"], type.name);
+    assert.deepEqual(Object.getOwnPropertyNames(type).filter((name) => !["length", "name", "prototype"].includes(name)),
+      ["parse"], type.name);
+  }
+  // A temporal value is read from text, and a constructor plain JavaScript calls still makes none.
+  assert.throws(() => new (Instant as unknown as new (...a: unknown[]) => Instant)(0n, 0), TypeError);
+});
+
+// A value is fixed once made: readonly and private hold only in TypeScript, and a value a decoder
+// compares against or an issue reports is one no one holding it can make another.
+test("holds every value it makes to what it was made as, whatever plain JavaScript writes", () => {
+  const values: object[] = [
+    LocalDate.parse("2024-01-01")!, LocalTime.parse("09:00")!, LocalDateTime.parse("2024-01-01T09:00")!,
+    OffsetDateTime.parse("2024-01-01T09:00Z")!, Instant.parse("2024-01-01T09:00:00Z")!,
+    Decimal.parse("1.50")!, new Float(1.5, 32), new JsonNumber("1.50"), new Issue("required"),
+  ];
+  for (const value of values) {
+    assert.ok(Object.isFrozen(value), Object.prototype.toString.call(value));
+    const name = Object.keys(value)[0] as string;
+    assert.throws(() => {
+      (value as Record<string, unknown>)[name] = 13;
+    }, TypeError, Object.prototype.toString.call(value));
+  }
+  const bound = LocalDate.parse("2024-12-31")!;
+  assert.throws(() => {
+    (bound as { month: number }).month = 99;
+  }, TypeError);
+  assert.equal(bound.toString(), "2024-12-31");
+  // What an issue's metadata holds is fixed with it, and what the caller handed over is not frozen.
+  const allowed = ["a", "b"];
+  const issue = new Issue("not_allowed", { meta: { allowed } });
+  assert.throws(() => (issue.meta.allowed as string[]).push("c"), TypeError);
+  allowed.push("c");
+  assert.deepEqual(issue.meta.allowed, ["a", "b"]);
+});
+
+test("refuses, when it is made, a value its type does not hold", () => {
+  assert.throws(() => new Float(1, 16 as never), RangeError);
+  assert.throws(() => new Decimal(1 as never, 0), TypeError);
+  assert.throws(() => new JsonNumber(1 as never), SyntaxError);
+  assert.throws(() => new Issue(1 as never), TypeError);
+  assert.throws(() => new Issues([{ code: "required" } as never]), TypeError);
 });

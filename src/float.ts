@@ -29,8 +29,16 @@ export class Float {
   readonly width: Width;
 
   constructor(value: number, width: Width) {
+    if (typeof value !== "number") {
+      throw new TypeError(`a float's value is a number, not ${String(value)}`);
+    }
+    if (width !== 32 && width !== 64) {
+      throw new RangeError(`a float is 32 or 64 bits wide, not ${String(width)}`);
+    }
     this.value = width === 32 ? Math.fround(value) : value;
     this.width = width;
+    // A value, so that no one holding it can make it another: readonly holds only in TypeScript.
+    Object.freeze(this);
   }
 
   get [Symbol.toStringTag](): string {
