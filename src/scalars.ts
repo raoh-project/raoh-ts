@@ -6,7 +6,7 @@ import { Float, type Width, nearestFloat } from "./float.ts";
 import { kindOf, lexemeOf } from "./input.ts";
 import { Issue, type Result, failed, ok } from "./issue.ts";
 import { compareValues, includesSame } from "./meta.ts";
-import { type Form, isWhiteSpace, lowercase, normalize, readPattern, uppercase } from "@raoh/199x-notation";
+import { type Form, isWhiteSpace, lowercase, normalize, readPattern, uppercase } from "@raoh/notation-199x";
 import { Instant, LocalDate, LocalDateTime, LocalTime, OffsetDateTime, type Temporal } from "./temporal.ts";
 import { isCuid, isEmail, isIpv4, isIpv6, isUlid, isUuid, uriParts } from "./text.ts";
 

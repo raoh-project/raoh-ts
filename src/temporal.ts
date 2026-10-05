@@ -1,6 +1,6 @@
 // Dates, times of day, date-times, date-times with an offset, and instants (spec/value-model.md).
 //
-// Which text is one of these is decided by the grammar 199x-notation shares between Raoh and
+// Which text is one of these is decided by the grammar notation-199x shares between Raoh and
 // Souther, and the value is built from the fields its reading of the text gives, so the text is
 // read once and by that grammar alone. A date, a date-time and an offset date-time hold the years
 // from -999999999 to 999999999 in the fields they are written in; an instant holds the moments on
@@ -21,14 +21,14 @@ import {
   readInstant,
   readOffsetDateTime,
   readTime,
-} from "@raoh/199x-notation";
+} from "@raoh/notation-199x";
 import { ofThisCopy, tagOf } from "./copy.ts";
 
 const SECONDS_PER_DAY = 86_400n;
 
 /**
  * What a constructor here is handed by this module and by nobody else: a value is made from what
- * 199x-notation read of a text, which is within the ranges the types hold, and from nothing else.
+ * notation-199x read of a text, which is within the ranges the types hold, and from nothing else.
  * Each constructor is private, so the types name no way of making one, and asks for this as well,
  * since a private constructor is still one plain JavaScript can call; and each value is frozen once
  * made, since readonly fields are still ones plain JavaScript can write.
