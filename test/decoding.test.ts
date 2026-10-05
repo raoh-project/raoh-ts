@@ -1,0 +1,457 @@
+// What the conformance suite does not reach: the values a TypeScript caller hands over, the types
+// a decoder gives, and the API a caller writes against.
+
+import assert from "node:assert/strict";
+import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { extname, join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { test } from "node:test";
+import {
+  Decimal,
+  Float,
+  Instant,
+  LocalDate,
+  LocalDateTime,
+  LocalTime,
+  OffsetDateTime,
+  Issue,
+  Issues,
+  JsonNumber,
+  Messages,
+  Path,
+  ValueSet,
+  decimal,
+  dict,
+  discriminate,
+  double,
+  enumOf,
+  float,
+  issueWire,
+  oneOf,
+  failed,
+  field,
+  int,
+  list,
+  literal,
+  long,
+  object,
+  ok,
+  optionalField,
+  parse,
+  string,
+  stringify,
+} from "../src/index.ts";
+
+const CATALOG_JA_TEXT = "raoh.required=必須です";
+
+test("reads what JSON.parse gives as it reads what parse gives, short of what JSON.parse loses", () => {
+  const point = object(field("x", int()), field("y", long()), field("price", decimal()));
+  const given = point.decode(JSON.parse('{"x": 1, "y": 9007199254740993, "price": 1.50}'));
+  const kept = point.decode(parse('{"x": 1, "y": 9007199254740993, "price": 1.50}'));
+
+  assert.deepEqual(given.value?.[0], 1);
+  // JSON.parse has rounded the integer and dropped the trailing zero before a decoder sees them.
+  assert.equal(given.value?.[1], 9007199254740992n);
+  assert.equal(String(given.value?.[2]), "1.5");
+  assert.equal(kept.value?.[1], 9007199254740993n);
+  assert.equal(String(kept.value?.[2]), "1.50");
+});
+
+test("reads an object handed over as a Map, a plain object or an instance alike, an undefined member as absent", () => {
+  const named = object(field("name", string()), optionalField("nick", string()));
+
+  assert.deepEqual(named.decode(new Map([["name", "a"]])).value, ["a", undefined]);
+  assert.deepEqual(named.decode({ name: "a", nick: undefined }).value, ["a", undefined]);
+  class Form {
+    name = "a";
+    nick = "b";
+  }
+  assert.deepEqual(named.decode(new Form()).value, ["a", "b"]);
+});
+
+test("says why text that is not JSON was not read, in the reader's language", () => {
+  const read = int().decodeJson("{");
+
+  const [issue] = read.issues ?? [];
+  assert.equal(issue?.messageKey, "invalid_format.json");
+  assert.equal(issue?.message(), "not valid JSON");
+  assert.equal(issue?.message(Messages.japanese), "JSONとして読めません");
+});
+
+test("gives a sum of products as a union the caller narrows by its tag", () => {
+  const shape = discriminate("type", {
+    circle: object(field("type", literal("circle")), field("radius", double().positive())),
+    square: object(field("type", literal("square")), field("side", int().positive())),
+  });
+
+  const read = shape.decode({ type: "square", side: 3 });
+  assert.ok(read.issues === undefined);
+  const [tag] = read.value;
+  assert.equal(tag, "square");
+  assert.deepEqual(
+    shape.decode({ type: "triangle" }).issues?.list.map((i) => [i.path.toString(), i.code, i.meta]),
+    [["/type", "not_allowed", { allowed: ["circle", "square"] }]],
+  );
+});
+
+test("gives an enumeration's symbol as it is declared, whatever case of ASCII it was written in", () => {
+  const color = enumOf(["Red", "GREEN"]);
+
+  assert.equal(color.decode("red").value, "Red");
+  assert.equal(color.decode("green").value, "GREEN");
+  assert.deepEqual(color.decode("blue").issues?.list[0]?.meta, { allowed: ["green", "red"] });
+  assert.throws(() => enumOf(["a", "A"]), RangeError);
+});
+
+test("relates the parts of a value once they exist, the rule's issues below the decoder's path", () => {
+  const period = object(field("start", int()), field("end", int())).flatMap(([start, end]) =>
+    start <= end ? ok({ start, end }) : failed(new Issue("invalid_value", { message: "end is before start", path: ["end"] })),
+  );
+  const trip = object(field("period", period));
+
+  const [issue] = trip.decode({ period: { start: 5, end: 1 } }).issues ?? [];
+  assert.equal(issue?.path.toString(), "/period/end");
+  assert.equal(issue?.message(Messages.japanese), "end is before start");
+});
+
+test("writes a float bound in a message as the float it is, and a decimal at its scale", () => {
+  const [low] = double().min(0.5).decode(0.25).issues ?? [];
+  const [cheap] = decimal().min(Decimal.parse("1.50") as Decimal).decode(parse("1.2")).issues ?? [];
+
+  assert.equal(low?.message(), "must be at least 0.5");
+  assert.equal(cheap?.message(), "must be at least 1.50");
+});
+
+test("keeps +0 and -0 apart in a set, and one NaN", () => {
+  const read = list(double()).toSet().decode(parse("[0, -0.0, 0.0, 1]"));
+
+  assert.ok(read.value instanceof ValueSet);
+  assert.equal(read.value.size, 3);
+  assert.ok(read.value.has(-0));
+  assert.ok(ValueSet.of([NaN, NaN]).size === 1);
+});
+
+test("escapes a path's segments once, and reads back exactly the path it wrote", () => {
+  const path = Path.of("a/b", "~c", 2);
+
+  assert.equal(path.toString(), "/a~1b/~0c/2");
+  assert.equal(Path.ROOT.toString(), "");
+  // A pointer does not say whether a token is a member's name or an index, so neither does a path.
+  assert.ok(Path.of("0").equals(Path.of(0)));
+  for (const pointer of ["", "/a~1b/~0c/2", "/0", "/9007199254740993", "/007", "/-1", "/"]) {
+    assert.equal(Path.parse(pointer).toString(), pointer);
+    assert.ok(Path.parse(Path.parse(pointer).toString()).equals(Path.parse(pointer)));
+  }
+  assert.throws(() => Path.ROOT.child(-1), RangeError);
+  assert.throws(() => Path.ROOT.child(2 ** 53), RangeError);
+});
+
+test("writes an issue as JSON whatever its metadata holds, every number as the number it is", () => {
+  const [long_] = long().min(10n).decode(1n).issues ?? [];
+  const [big] = long().max(9007199254740992n).decode(parse("9007199254740993")).issues ?? [];
+  const [negativeZero] = double().positive().decode(parse("-0.0")).issues ?? [];
+  const [float32] = float().min(0.1).decode(0).issues ?? [];
+  const [scaled] = decimal().min(Decimal.parse("1.50") as Decimal).decode(parse("1.2")).issues ?? [];
+  const tried = oneOf(string(), long().min(5n)).decode(1n).issues;
+
+  assert.equal(
+    JSON.stringify(long_),
+    '{"path":"","code":"out_of_range","messageKey":"out_of_range.minimum","message":"must be at least 10","meta":{"min":10,"actual":1}}',
+  );
+  assert.match(JSON.stringify(big), /"meta":\{"max":9007199254740992,"actual":9007199254740993\}/);
+  assert.match(JSON.stringify(negativeZero), /"actual":\{"float":"-0"\}/);
+  assert.match(JSON.stringify(float32), /"min":0\.1,/);
+  assert.match(JSON.stringify(scaled), /"min":"1\.50"/);
+  // The issues a one_of_failed lists are written as the specification observes the issues type:
+  // with no message key, which only the issue that holds them carries.
+  assert.deepEqual(JSON.parse(JSON.stringify(tried)), [
+    {
+      path: "",
+      code: "one_of_failed",
+      messageKey: "one_of_failed",
+      message: "no variant matched",
+      meta: {
+        candidates: [
+          {
+            candidate: 0,
+            issues: [{ path: "", code: "type_mismatch", message: "expected string", meta: { expected: "string", actual: "number" } }],
+          },
+          {
+            candidate: 1,
+            issues: [{ path: "", code: "out_of_range", message: "must be at least 5", meta: { min: 5, actual: 1 } }],
+          },
+        ],
+      },
+    },
+  ]);
+  // A number of the input model is written as it was read.
+  assert.equal(JSON.stringify(parse("[9007199254740993, 1.50, -0]")), "[9007199254740993,1.50,-0]");
+});
+
+test("on an engine without JSON.rawJSON, writes a number as a JavaScript number only where that keeps it", () => {
+  const json = JSON as { rawJSON?: unknown };
+  const raw = json.rawJSON;
+  delete json.rawJSON;
+  try {
+    assert.equal(JSON.stringify(parse("[1, 0.1, 1.0E7, 1.50]")), "[1,0.1,10000000,1.5]");
+    assert.throws(() => JSON.stringify(parse("9007199254740993")), RangeError);
+    assert.throws(() => JSON.stringify(parse("-0")), RangeError);
+  } finally {
+    json.rawJSON = raw;
+  }
+});
+
+test("writes an issue's sentence in the catalogue asked for", () => {
+  const read = string().minLength(3).decode("ab");
+
+  assert.equal(read.issues?.toWire(Messages.japanese)[0]?.message, "3文字以上で入力してください");
+  assert.equal(issueWire(read.issues?.list[0] as Issue, Messages.japanese).message, "3文字以上で入力してください");
+});
+
+test("reads a catalogue of one's own, falling back to another", () => {
+  const french = Messages.fromProperties("raoh.invalid_format=format invalide\nraoh.too_short=au moins {min} \\u00e9l\\u00e9ments").fallingBackTo(
+    Messages.english,
+  );
+
+  const [short] = string().minLength(3).decode("ab").issues ?? [];
+  const [email] = string().email().decode("x").issues ?? [];
+  const [required] = string().decode(null).issues ?? [];
+  assert.equal(short?.message(french), "au moins 3 éléments");
+  assert.equal(email?.message(french), "format invalide");
+  assert.equal(required?.message(french), "is required");
+});
+
+test("writes a value of the input model as the JSON text parse reads it back from", () => {
+  const text = '{"b":1.50,"1":[9007199254740993,-0,true,null,"é"],"a":{}}';
+
+  assert.equal(stringify(parse(text)), text);
+  // A plain object's members as it holds them, an absent member left out, numbers as they are.
+  assert.equal(stringify({ x: 1, y: undefined, z: [2n, -0] }), '{"x":1,"z":[2,-0]}');
+  assert.throws(() => stringify(undefined), TypeError);
+  assert.throws(() => stringify([NaN]), TypeError);
+});
+
+test("reads a number JSON.rawJSON made as the number it is written as", () => {
+  const raw = (JSON as unknown as { rawJSON(text: string): unknown }).rawJSON;
+
+  assert.equal(String(decimal().decode(raw("1.50")).value), "1.50");
+  assert.equal(long().decode(raw("9007199254740993")).value, 9007199254740993n);
+  assert.equal(stringify([raw("1.50")]), "[1.50]");
+  assert.throws(() => string().decode(raw('"text"')), TypeError);
+  // And written as that number where an issue holds it, by the same rule that read it.
+  const held = new Issue("missing_element", { meta: { expected: raw("12345678901234567890.5") } });
+  assert.equal(JSON.stringify(held.toJSON().meta), '{"expected":12345678901234567890.5}');
+});
+
+test("writes what a fallback says of an issue no catalogue has a template for, in every language over it", () => {
+  const own = (issue: Issue) => `broken: ${String(issue.meta.rule)}`;
+  const english = Messages.english.withFallback(own);
+  const japanese = Messages.fromProperties(CATALOG_JA_TEXT).fallingBackTo(english);
+  const ruled = new Issue("invariant_violation", { meta: { rule: "even" } });
+
+  assert.equal(ruled.message(english), "broken: even");
+  assert.equal(ruled.message(japanese), "broken: even");
+  assert.equal(ruled.message(Messages.english), "validation failed: invariant_violation");
+  // A template, where a catalogue has one, wins over the fallback.
+  assert.equal(new Issue("required").message(japanese), "必須です");
+  assert.equal(ruled.message(english.withOverrides({ invariant_violation: "rule {rule}" })), "rule even");
+});
+
+test("refuses a value another copy of the library made, where it would otherwise be misread", async () => {
+  // The sources copied somewhere else are another copy, as one a library brings with it would be,
+  // and it finds its own dependencies where an installed copy would, in a node_modules above it:
+  // under target/, which nothing keeps.
+  const copies = join(import.meta.dirname, "..", "target", "copies");
+  mkdirSync(copies, { recursive: true });
+  const elsewhere = mkdtempSync(join(copies, "raoh-copy-"));
+  cpSync(join(import.meta.dirname, "..", "src"), elsewhere, { recursive: true });
+  // A copy is a package of its own, whose package.json says its JavaScript is ES modules.
+  writeFileSync(join(elsewhere, "package.json"), JSON.stringify({ type: "module" }));
+  // The copy is of the sources as this test runs them: TypeScript, or the JavaScript they compile to.
+  const index = join(elsewhere, `index${extname(import.meta.filename)}`);
+  const other = (await import(pathToFileURL(index).href)) as typeof import("../src/index.ts");
+  const theirs = other.parse("[1.50]") as unknown[];
+
+  assert.throws(() => stringify(theirs), /another copy of @raoh\/core/);
+  assert.throws(() => decimal().decode(theirs[0]), /another copy of @raoh\/core/);
+  assert.throws(() => new Issue("required").under(other.Path.of("a")), /another copy of @raoh\/core/);
+  assert.throws(() => new Issue("required", { path: other.Path.of("a") }), /another copy of @raoh\/core/);
+  assert.throws(() => JSON.stringify(new Issue("x", { meta: { bound: other.Decimal.of(1) } })), /another copy/);
+  assert.throws(() => failed(new other.Issue("required")), /another copy of @raoh\/core/);
+  assert.throws(() => stringify([other.Decimal.of(1)]), /another copy of @raoh\/core/);
+  assert.throws(() => decimal().decode(other.Decimal.of(1)), /another copy of @raoh\/core/);
+  // A copy's own values are its own.
+  assert.equal(other.stringify(theirs), "[1.50]");
+});
+
+test("writes only what parse reads back, as the value it was, and refuses what the input model has no place for", () => {
+  const sparse: unknown[] = [];
+  sparse[1] = 1;
+  const refused: [string, unknown][] = [
+    ["a hole in an array", sparse],
+    ["an unpaired surrogate", "\ud800"],
+    ["a member name with an unpaired surrogate", { "\udc00": 1 }],
+    ["a Map key that is not a string", new Map<unknown, unknown>([[1, "x"]])],
+    ["a String object", new String("ab")],
+    ["a Date", new Date(0)],
+    ["a Set", new Set([1])],
+    ["a function", () => 1],
+    ["NaN", Number.NaN],
+  ];
+  for (const [what, value] of refused) {
+    assert.throws(() => stringify(value), TypeError, what);
+  }
+  // A decoder reads a value by the same rule, so what stringify refuses no decoder reads either.
+  assert.throws(() => list(int()).decode(sparse), TypeError);
+  assert.throws(() => string().decode("\ud800"), TypeError);
+  assert.throws(() => dict(int()).decode(new Map<unknown, unknown>([[1, 1]])), TypeError);
+
+  class Form {
+    name = "a";
+    lines = [1, 2.5];
+  }
+  const written: unknown[] = [
+    null, true, "é😀", "", -0, 1e-7, 1e21, 2n ** 70n, [], {}, [[[]]], new Map<string, unknown>([["1", 1], ["a", [null]]]),
+    { b: { c: "\u0000\n\"" }, a: undefined }, new Form(), parse('{"x":1.50,"y":[-0.0,1E+3]}'),
+  ];
+  for (const value of written) {
+    const text = stringify(value);
+    assert.equal(stringify(parse(text)), text, text);
+  }
+});
+
+test("gives the issues at a path, as a form shows them beside a field", () => {
+  const order = object(
+    field("lines", list(object(field("sku", string().minLength(3)), field("quantity", long())))),
+    field("note", string()),
+  );
+  const read = order.decode({ lines: [{ sku: "A", quantity: "two" }, { sku: "ABC", quantity: 1 }], note: 1 });
+  assert.ok(read.issues !== undefined);
+  assert.deepEqual(read.issues.at(["lines", 0, "sku"]).map((issue) => issue.code), ["too_short"]);
+  assert.deepEqual(read.issues.at(Path.of("lines", 0, "quantity")).map((issue) => issue.code), ["type_mismatch"]);
+  assert.deepEqual(read.issues.at(["lines", "0", "quantity"]), read.issues.at(["lines", 0, "quantity"]));
+  // Only the issues at the path: none above it, and none below it.
+  assert.deepEqual(read.issues.at(["lines", 0]), []);
+  assert.deepEqual(read.issues.at(["lines", 1, "sku"]), []);
+  assert.deepEqual(read.issues.at([]), []);
+  assert.equal(read.issues.at(["note"]).length, 1);
+});
+
+test("reads a Decimal as the number it is, at its scale", () => {
+  const priced = Decimal.parse("1500.00");
+  const read = decimal().decode(priced);
+  assert.ok(read.issues === undefined);
+  assert.equal(read.value.toString(), "1500.00");
+  assert.equal(stringify({ unitPrice: priced, tiny: Decimal.parse("1E-7") }), '{"unitPrice":1500.00,"tiny":1E-7}');
+  assert.equal(long().decode(Decimal.parse("2")).value, 2n);
+  assert.deepEqual(int().decode(Decimal.parse("2.5")).issues?.list.map((issue) => issue.code), ["type_mismatch"]);
+  // What stringify writes of a Decimal, parse reads back as that Decimal.
+  const [back] = parse(stringify([Decimal.parse("-0.10")])) as unknown[];
+  assert.equal(decimal().decode(back).value?.toString(), "-0.10");
+});
+
+test("reads text by notation-199x's rules, whatever the engine's Unicode", () => {
+  // U+0085 is White_Space and U+FEFF is not, where String.prototype.trim says the opposite of each.
+  assert.equal(string().trim().decode("\u0085 a \u3000").value, "a");
+  assert.equal(string().trim().decode("\uFEFFa").value, "\uFEFFa");
+  assert.deepEqual(string().nonBlank().decode("\u2028 ").issues?.list.map((issue) => issue.code), ["blank"]);
+  assert.equal(string().toLowerCase().decode("ΟΔΥΣΣΕΥΣ").value, "οδυσσευς");
+  assert.equal(string().toUpperCase().decode("straße").value, "STRASSE");
+  assert.equal(string().normalize().decode("e\u0301").value, "\u00E9");
+  assert.equal(string().normalize("NFKD").decode("\uFB01").value, "fi");
+  const code = string().pattern("[A-Z]{3}-[0-9]{4}");
+  assert.equal(code.decode("ABC-1234").value, "ABC-1234");
+  assert.deepEqual(code.decode("ABC-12345").issues?.list.map((issue) => [issue.messageKey, issue.meta.pattern]),
+    [["invalid_format", "[A-Z]{3}-[0-9]{4}"]]);
+});
+
+test("refuses, when it is made, a decoder no value could be read by", () => {
+  assert.throws(() => string().pattern("(?=a)"), SyntaxError);
+  assert.throws(() => string().pattern("a{134217728}"), RangeError);
+  assert.throws(() => string().normalize("NFX" as never), RangeError);
+  const later = LocalDate.parse("2024-12-31")!;
+  const earlier = LocalDate.parse("2024-01-01")!;
+  assert.throws(() => string().date().between(later, earlier), RangeError);
+  // A temporal value is read from text, and not made from fields that may name no day.
+  assert.throws(() => new (LocalDate as unknown as new (...a: unknown[]) => LocalDate)(Symbol("made"), 2024, 13, 1), TypeError);
+});
+
+test("reads dates, times and instants, and writes them as their observations", () => {
+  assert.equal(string().date().decode("+10000-01-01").value?.toString(), "+10000-01-01");
+  assert.equal(string().time().decode("10:30:00").value?.toString(), "10:30");
+  assert.equal(string().time().decode("10:30:45.1").value?.toString(), "10:30:45.100");
+  assert.equal(string().dateTime().decode("2024-02-29T00:00:00.000000001").value?.toString(), "2024-02-29T00:00:00.000000001");
+  assert.equal(string().offsetDateTime().decode("2024-01-15T10:30-00:00").value?.toString(), "2024-01-15T10:30Z");
+  assert.equal(string().offsetDateTime().decode("2024-01-15T10:30:00+05:30:15").value?.toString(), "2024-01-15T10:30+05:30:15");
+  assert.equal(string().iso8601().decode("2026-09-30T24:00:00+09:00").value?.toString(), "2026-09-30T15:00:00Z");
+  assert.equal(string().iso8601().decode("+1000000000-12-31T23:59:59.999999999Z").value?.toString(),
+    "+1000000000-12-31T23:59:59.999999999Z");
+  assert.equal(string().iso8601().decode("-1000000000-01-01T00:00:00Z").value?.toString(), "-1000000000-01-01T00:00:00Z");
+  assert.deepEqual(string().iso8601().decode("2016-12-31T23:59:60Z").issues?.list.map((issue) => issue.messageKey),
+    ["invalid_format.instant"]);
+  assert.equal(JSON.stringify({ at: LocalTime.parse("09:00:00") }), '{"at":"09:00"}');
+});
+
+test("tells an offset date-time's sameness from its chronology", () => {
+  const nine = OffsetDateTime.parse("2024-01-01T09:00Z")!;
+  const ten = OffsetDateTime.parse("2024-01-01T10:00+01:00")!;
+  assert.equal(nine.equals(ten), false);
+  assert.equal(nine.compare(ten), 0);
+  // Neither is before the other, so a bound at one refuses the other on both sides.
+  assert.equal(string().offsetDateTime().before(ten).decode("2024-01-01T09:00Z").issues?.list[0]?.messageKey, "out_of_range.before");
+  assert.equal(string().offsetDateTime().after(ten).decode("2024-01-01T09:00Z").issues?.list[0]?.messageKey, "out_of_range.after");
+  assert.ok(string().offsetDateTime().between(ten, ten).decode("2024-01-01T09:00Z").issues === undefined);
+  const read = string().dateTime().after(LocalDateTime.parse("2024-01-01T00:00")!).decode("2023-12-31T23:59");
+  assert.deepEqual(read.issues?.toJSON().map((issue) => issue.meta),
+    [{ after: "2024-01-01T00:00", actual: "2023-12-31T23:59" }]);
+  assert.equal(Instant.parse("1970-01-01T00:00:00Z")?.epochSecond, 0n);
+});
+
+// What each temporal value offers is its fields, parse, equals, compare, toString and toJSON, and
+// nothing a later change to how it is held would have to keep.
+test("offers of each temporal value what it is, and nothing of how it is held", () => {
+  const surface = (type: { prototype: object }) => Object.getOwnPropertyNames(type.prototype).sort();
+  for (const type of [LocalDate, LocalTime, LocalDateTime, OffsetDateTime, Instant]) {
+    assert.deepEqual(surface(type), ["compare", "constructor", "equals", "toJSON", "toString"], type.name);
+    assert.deepEqual(Object.getOwnPropertyNames(type).filter((name) => !["length", "name", "prototype"].includes(name)),
+      ["parse"], type.name);
+  }
+  // A temporal value is read from text, and a constructor plain JavaScript calls still makes none.
+  assert.throws(() => new (Instant as unknown as new (...a: unknown[]) => Instant)(0n, 0), TypeError);
+});
+
+// A value is fixed once made: readonly and private hold only in TypeScript, and a value a decoder
+// compares against or an issue reports is one no one holding it can make another.
+test("holds every value it makes to what it was made as, whatever plain JavaScript writes", () => {
+  const values: object[] = [
+    LocalDate.parse("2024-01-01")!, LocalTime.parse("09:00")!, LocalDateTime.parse("2024-01-01T09:00")!,
+    OffsetDateTime.parse("2024-01-01T09:00Z")!, Instant.parse("2024-01-01T09:00:00Z")!,
+    Decimal.parse("1.50")!, new Float(1.5, 32), new JsonNumber("1.50"), new Issue("required"),
+  ];
+  for (const value of values) {
+    assert.ok(Object.isFrozen(value), Object.prototype.toString.call(value));
+    const name = Object.keys(value)[0] as string;
+    assert.throws(() => {
+      (value as Record<string, unknown>)[name] = 13;
+    }, TypeError, Object.prototype.toString.call(value));
+  }
+  const bound = LocalDate.parse("2024-12-31")!;
+  assert.throws(() => {
+    (bound as { month: number }).month = 99;
+  }, TypeError);
+  assert.equal(bound.toString(), "2024-12-31");
+  // What an issue's metadata holds is fixed with it, and what the caller handed over is not frozen.
+  const allowed = ["a", "b"];
+  const issue = new Issue("not_allowed", { meta: { allowed } });
+  assert.throws(() => (issue.meta.allowed as string[]).push("c"), TypeError);
+  allowed.push("c");
+  assert.deepEqual(issue.meta.allowed, ["a", "b"]);
+});
+
+test("refuses, when it is made, a value its type does not hold", () => {
+  assert.throws(() => new Float(1, 16 as never), RangeError);
+  assert.throws(() => new Decimal(1 as never, 0), TypeError);
+  assert.throws(() => new JsonNumber(1 as never), SyntaxError);
+  assert.throws(() => new Issue(1 as never), TypeError);
+  assert.throws(() => new Issues([{ code: "required" } as never]), TypeError);
+});
