@@ -21,7 +21,7 @@ npm install @raoh/core
 ```
 
 It is an ES module, and runs on Node 22 and later and in current browsers. It depends on
-[`@raoh/199x-notation`](https://github.com/raoh-project/199x-notation), which reads text by the
+[`@raoh/notation-199x`](https://github.com/raoh-project/notation-199x), which reads text by the
 rules Raoh and Souther share: the `White_Space` set, Unicode 18.0.0 case mapping and normalization,
 the pattern language and the grammar of dates and times. JavaScript's own `trim`, `toLowerCase`,
 `normalize` and `RegExp` answer by the Unicode version of the engine, so a string read on one

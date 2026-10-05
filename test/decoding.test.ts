@@ -350,7 +350,7 @@ test("reads a Decimal as the number it is, at its scale", () => {
   assert.equal(decimal().decode(back).value?.toString(), "-0.10");
 });
 
-test("reads text by 199x-notation's rules, whatever the engine's Unicode", () => {
+test("reads text by notation-199x's rules, whatever the engine's Unicode", () => {
   // U+0085 is White_Space and U+FEFF is not, where String.prototype.trim says the opposite of each.
   assert.equal(string().trim().decode("\u0085 a \u3000").value, "a");
   assert.equal(string().trim().decode("\uFEFFa").value, "\uFEFFa");

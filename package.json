@@ -52,6 +52,6 @@
     "typescript": "^5.9.0"
   },
   "dependencies": {
-    "@raoh/199x-notation": "0.2.0-dev.253.20261005083652.gb842bf66d0ae"
+    "@raoh/notation-199x": "0.2.0"
   }
 }
