@@ -58,13 +58,19 @@ version_of() {
   scripts/publish.sh refs/heads/develop --check | sed -n 's/^version=//p'
 }
 
+# The development paths start from a commit that holds X.Y.Z-dev, as develop does, whatever
+# package.json holds where CI runs: a dry run puts package.json back as the commit has it.
+git checkout --quiet --detach
 npm version --no-git-tag-version --allow-same-version "$release-dev" > /dev/null
+git add package.json package-lock.json
+git -c user.name=ci -c user.email=ci@localhost commit --quiet --allow-empty -m "the development version"
+dev_start="$(git rev-parse HEAD)"
 expect "a development version newest on develop" \
   "$(DEVELOP=HEAD scripts/publish.sh refs/heads/develop --dry-run 2>&1)" \
   "with tag dev"
 
 later="$(commit_dated "2030-01-01T00:00:00Z")"
-git checkout --quiet --detach "$start"
+git checkout --quiet --detach "$dev_start"
 expect "a development version a later commit has passed" \
   "$(DEVELOP="$later" scripts/publish.sh refs/heads/develop --dry-run 2>&1)" \
   "nothing is published" "Publishing to"
