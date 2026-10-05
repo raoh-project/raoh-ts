@@ -1,6 +1,6 @@
 {
   "name": "@raoh/core",
-  "version": "0.9.0-dev",
+  "version": "0.9.0",
   "description": "Decoders that turn untyped boundary input into typed domain values, reporting every issue with its path",
   "license": "Apache-2.0",
   "repository": {
