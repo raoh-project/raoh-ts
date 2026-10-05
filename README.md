@@ -204,7 +204,7 @@ at the commit `conformance/spec.lock` pins, with the verifier of that commit:
 scripts/conformance.sh
 ```
 
-Raoh Specification 0.9.0-dev — core: conformant; encode: conformant; messages-en: conformant;
+Raoh Specification 0.9 — core: conformant; encode: conformant; messages-en: conformant;
 messages-ja: conformant.
 
 ## Releasing
